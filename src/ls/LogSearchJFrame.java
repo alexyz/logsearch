@@ -38,11 +38,7 @@ public class LogSearchJFrame extends JFrame {
 	public LogSearchJFrame () {
 		super("LogSearch");
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
-		try {
-			load();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		load();
 		listeners();
 		setContentPane(content());
 		setPreferredSize(new Dimension(800, 600));
@@ -174,9 +170,19 @@ public class LogSearchJFrame extends JFrame {
 			}
 			
 		});
+		
+		table.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseClicked (MouseEvent e) {
+				if (e.getClickCount() == 2) {
+					preview();
+				}
+			}
+		});
 	}
 	
 	private void preview () {
+		System.out.println("preview");
 		int row = table.getSelectedRow();
 		if (row >= 0) {
 			Result result = tableModel.getResult(row);
@@ -193,6 +199,7 @@ public class LogSearchJFrame extends JFrame {
 	}
 	
 	private void open () throws Exception {
+		System.out.println("open");
 		int r = table.getSelectedRow();
 		if (r >= 0) {
 			if (editor != null) {
@@ -252,6 +259,8 @@ public class LogSearchJFrame extends JFrame {
 	}
 	
 	private void search () {
+		System.out.println("search");
+		
 		if (FindThread.running) {
 			System.out.println("already running");
 			return;
