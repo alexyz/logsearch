@@ -3,18 +3,13 @@ package ls;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.GridLayout;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import java.awt.event.*;
 import java.io.*;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.regex.*;
 import java.util.zip.*;
 
 import javax.swing.*;
-import javax.swing.table.AbstractTableModel;
+import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame {
 	
@@ -27,30 +22,74 @@ public class LogSearchJFrame extends JFrame {
 	private final JTextField dirField = new JTextField();
 	private final JButton dirButton = new JButton("...");
 	private final JTextField nameField = new JTextField();
-	
 	private final JTextField searchField = new JTextField();
 	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(7, 1, 999, 1));
 	private final JButton startButton = new JButton("Start");
 	private final JButton stopButton = new JButton("Stop");
 	private final JButton openButton = new JButton("Open");
-	private final FDTM tableModel = new FDTM();
+	private final ResultTableModel tableModel = new ResultTableModel();
 	private final JTable table = new JTable(tableModel);
+	private final JButton editorButton = new JButton("...");
+	private final JLabel editorLabel = new JLabel();
+	private final JButton previewButton = new JButton("Preview");
+	
+	private File editor;
 	
 	public LogSearchJFrame () {
 		super("LogSearch");
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
-		
-		dirField.setText(System.getProperty("user.dir"));
-		nameField.setText("server.log");
-		searchField.setText("a");
-		
+		try {
+			load();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 		listeners();
 		setContentPane(content());
 		setPreferredSize(new Dimension(800, 600));
 		pack();
 	}
 	
-	public void add (final FD fd) {
+	private void load () {
+		try {
+			File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
+			Properties p = new Properties();
+			if (f.exists()) {
+				try (InputStream is = new FileInputStream(f)) {
+					p.load(is);
+				}
+			}
+			dirField.setText(p.getProperty("dir", System.getProperty("user.dir")));
+			nameField.setText(p.getProperty("name", "server.log"));
+			searchField.setText(p.getProperty("search", "a"));
+			ageSpinner.setValue(Integer.parseInt(p.getProperty("age", "7")));
+			editor = new File(p.getProperty("editor", defaultEditor().getAbsolutePath()));
+			if (!editor.exists()) {
+				editor = null;
+			}
+			editorLabel.setText(editor != null ? editor.getName() : "no editor");
+		} catch (Exception e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, e.toString(), "Load Properties", JOptionPane.WARNING_MESSAGE);
+		}
+	}
+	
+	private void save () {
+		Properties p = new Properties();
+		p.setProperty("dir", dirField.getText());
+		p.setProperty("name", nameField.getText());
+		p.setProperty("search", searchField.getText());
+		p.setProperty("editor", editor != null ? editor.getAbsolutePath() : "");
+		p.setProperty("age", String.valueOf(ageSpinner.getValue()));
+		File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
+		try (OutputStream os = new FileOutputStream(f)) {
+			p.store(os, null);
+		} catch (Exception e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, e.toString(), "Save Properties", JOptionPane.WARNING_MESSAGE);
+		}
+	}
+	
+	public void add (final Result fd) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
@@ -73,17 +112,45 @@ public class LogSearchJFrame extends JFrame {
 			}
 		});
 		
+		editorButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed (ActionEvent e) {
+				JFileChooser fc = new JFileChooser();
+				if (editor != null) {
+					fc.setSelectedFile(editor);
+				}
+				fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
+				fc.setFileFilter(new FileFilter() {
+					
+					@Override
+					public String getDescription () {
+						return "Executables";
+					}
+					
+					@Override
+					public boolean accept (File f) {
+						return f.isDirectory() || f.getName().toLowerCase().endsWith(".exe");
+					}
+				});
+				int o = fc.showOpenDialog(LogSearchJFrame.this);
+				if (o == JFileChooser.APPROVE_OPTION) {
+					editor = fc.getSelectedFile();
+					editorLabel.setText(editor.getName());
+				}
+			}
+		});
+		
 		startButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				start();
+				search();
 			}
 		});
 		
 		stopButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				FT.running = false;
+				FindThread.running = false;
 			}
 		});
 		
@@ -99,21 +166,47 @@ public class LogSearchJFrame extends JFrame {
 			}
 			
 		});
+		
+		previewButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed (ActionEvent ae) {
+				preview();
+			}
+			
+		});
+	}
+	
+	private void preview () {
+		int row = table.getSelectedRow();
+		if (row >= 0) {
+			Result result = tableModel.getResult(row);
+			if (result.lines.size() > 0) {
+				StringBuffer sb = new StringBuffer();
+				for (Line line : result.lines) {
+					sb.append("Line " + line.number + "\n");
+					sb.append(line.line + "\n");
+				}
+				TextJDialog d = new TextJDialog(this, "Lines", sb.toString());
+				d.setVisible(true);
+			}
+		}
 	}
 	
 	private void open () throws Exception {
 		int r = table.getSelectedRow();
 		if (r >= 0) {
-			FD fd = tableModel.getFD(r);
-			File file;
-			if (fd.file.getName().toLowerCase().endsWith(".gz")) {
-				file = ungzip(fd.file);
-			} else if (fd.file.getName().toLowerCase().endsWith(".zip")) {
-				file = unzip(fd.file, fd.entry);
-			} else {
-				file = fd.file;
+			if (editor != null) {
+				Result result = tableModel.getResult(r);
+				File file;
+				if (result.file.getName().toLowerCase().endsWith(".gz")) {
+					file = ungzip(result.file);
+				} else if (result.file.getName().toLowerCase().endsWith(".zip")) {
+					file = unzip(result.file, result.entry);
+				} else {
+					file = result.file;
+				}
+				Runtime.getRuntime().exec(new String[] { editor.getAbsolutePath(), file.getAbsolutePath() });
 			}
-			Runtime.getRuntime().exec(new String[] { getEditor().getAbsolutePath(), file.getAbsolutePath() });
 		}
 	}
 	
@@ -147,7 +240,7 @@ public class LogSearchJFrame extends JFrame {
 		return file;
 	}
 	
-	private static File getEditor () {
+	private static File defaultEditor () {
 		Map<String, String> env = System.getenv();
 		String pf86 = env.get("ProgramFiles(x86)");
 		String windir = env.get("windir");
@@ -158,25 +251,29 @@ public class LogSearchJFrame extends JFrame {
 		return new File(windir + "\\notepad.exe");
 	}
 	
-	private void start () {
-		if (FT.running) {
+	private void search () {
+		if (FindThread.running) {
 			System.out.println("already running");
 			return;
 		}
+		
+		tableModel.clear();
+		
 		final String text = searchField.getText();
-		if (text.length() == 0) {
-			System.out.println("no search text");
-			return;
-		}
 		final File dir = new File(dirField.getText());
 		Calendar startCal = new GregorianCalendar();
 		startCal.add(Calendar.DATE, -(int) ageSpinner.getValue());
 		final Date startDate = startCal.getTime();
 		final String name = nameField.getText();
+		if (name.length() == 0) {
+			System.out.println("no name filter");
+			return;
+		}
 		
-		tableModel.clear();
+		save();
 		
-		FT ft = new FT(dir, startDate, name, text);
+		FindThread ft = new FindThread(dir, startDate, name, text);
+		FindThread.running = true;
 		ft.start();
 	}
 	
@@ -203,6 +300,9 @@ public class LogSearchJFrame extends JFrame {
 		JScrollPane sp = new JScrollPane(table);
 		
 		JPanel p5 = new JPanel();
+		p5.add(previewButton);
+		p5.add(editorLabel);
+		p5.add(editorButton);
 		p5.add(openButton);
 		
 		JPanel p4 = new JPanel(new GridLayout(2, 1));
@@ -215,225 +315,4 @@ public class LogSearchJFrame extends JFrame {
 		p2.add(p5, BorderLayout.SOUTH);
 		return p2;
 	}
-}
-
-class FD implements Comparable<FD> {
-	public final int lines;
-	public final Date date;
-	public final String name;
-	public final File file;
-	public final String entry;
-	
-	public FD (String name, Date date, File file, String entry, int lines) {
-		this.name = name;
-		this.file = file;
-		this.date = date;
-		this.entry = entry;
-		this.lines = lines;
-	}
-	
-	@Override
-	public int compareTo (FD o) {
-		int c = date.compareTo(o.date);
-		if (c == 0) {
-			return name.compareToIgnoreCase(o.name);
-		}
-		return -c;
-	}
-	
-}
-
-class FDTM extends AbstractTableModel {
-	
-	private final List<FD> list = new ArrayList<>();
-	
-	public void clear () {
-		list.clear();
-		fireTableDataChanged();
-	}
-	
-	public void add (FD fd) {
-		list.add(fd);
-		Collections.sort(list);
-		fireTableDataChanged();
-	}
-	
-	public FD getFD (int row) {
-		return list.get(row);
-	}
-	
-	@Override
-	public int getRowCount () {
-		return list.size();
-	}
-	
-	@Override
-	public int getColumnCount () {
-		return 3;
-	}
-	
-	@Override
-	public String getColumnName (int col) {
-		switch (col) {
-			case 0:
-				return "Name";
-			case 1:
-				return "Date";
-			case 2:
-				return "Matches";
-		}
-		return null;
-	}
-	
-	@Override
-	public Object getValueAt (int row, int col) {
-		FD fd = list.get(row);
-		switch (col) {
-			case 0:
-				return fd.name;
-			case 1:
-				return DateFormat.getDateTimeInstance().format(fd.date);
-			case 2:
-				return fd.lines != 0 ? fd.lines : "";
-		}
-		return null;
-	}
-	
-}
-
-class FT extends Thread {
-	public static volatile boolean running;
-	private final File dir;
-	private final Date startDate;
-	private final String name;
-	private final String text;
-	
-	public FT (File dir, Date startDate, String name, String text) {
-		setPriority(Thread.MIN_PRIORITY);
-		setDaemon(true);
-		this.dir = dir;
-		this.startDate = startDate;
-		this.name = name;
-		this.text = text;
-	}
-	
-	@Override
-	public void run () {
-		running = true;
-		try {
-			find(dir);
-		} catch (Exception e) {
-			e.printStackTrace();
-			JOptionPane.showMessageDialog(LogSearchJFrame.instance, e.toString(), "Could not search", JOptionPane.ERROR_MESSAGE);
-		}
-		running = false;
-	}
-	
-	private int scan (File f) throws Exception {
-		System.out.println("scan " + f);
-		try (InputStream is = new FileInputStream(f)) {
-			if (f.getName().endsWith(".gz")) {
-				try (InputStream is2 = new GZIPInputStream(is)) {
-					return scan(is2);
-				}
-			} else {
-				return scan(is);
-			}
-		}
-	}
-	
-	private int scan (InputStream is) throws Exception {
-		int lines = 0;
-		try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
-			String l;
-			while ((l = br.readLine()) != null) {
-				if (!running) {
-					break;
-				}
-				if (l.contains(text)) {
-					System.out.println("matched line " + l);
-					lines++;
-				}
-			}
-		}
-		return lines;
-	}
-	
-	private void find (File dir) throws Exception {
-		for (File file : dir.listFiles()) {
-			if (!running) {
-				break;
-			}
-			if (file.isFile()) {
-				if (file.getName().endsWith(".zip")) {
-					findZip(file);
-				} else if (file.getName().contains(name)) {
-					findFile(file);
-				}
-			} else if (file.isDirectory()) {
-				find(file);
-			}
-		}
-	}
-	
-	private void findFile (File file) throws Exception {
-		Date date = getDate(file.getName());
-		if (date == null) {
-			date = new Date(file.lastModified());
-		}
-		if (date.after(startDate)) {
-			int lines = scan(file);
-			LogSearchJFrame.instance.add(new FD(file.getName(), date, file, null, lines));
-		}
-	}
-	
-	private void findZip (File file) throws Exception {
-		try (ZipFile zf = new ZipFile(file)) {
-			Enumeration<? extends ZipEntry> e = zf.entries();
-			while (e.hasMoreElements()) {
-				if (!running) {
-					break;
-				}
-				ZipEntry ze = e.nextElement();
-				String filename = ze.getName();
-				if (filename.contains("/")) {
-					filename = filename.substring(filename.lastIndexOf("/") + 1);
-				}
-				if (filename.contains(name)) {
-					Date date = getDate(filename);
-					if (date == null) {
-						long t = ze.getTime();
-						if (t > 0) {
-							date = new Date(t);
-						}
-					}
-					if (date != null && date.after(startDate)) {
-						try (InputStream is = zf.getInputStream(ze)) {
-							int lines = scan(is);
-							LogSearchJFrame.instance.add(new FD(filename, date, file, ze.getName(), lines));
-						}
-					}
-				}
-			}
-		}
-	}
-	
-	private static Date getDate (String name) {
-		Pattern datePat = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})");
-		Date date = null;
-		if (name.length() > 0) {
-			Matcher mat = datePat.matcher(name);
-			if (mat.find()) {
-				String dateStr = mat.group(1);
-				DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-				try {
-					date = df.parse(dateStr);
-				} catch (ParseException e) {
-					e.printStackTrace();
-				}
-			}
-		}
-		return date;
-	}
-	
 }
