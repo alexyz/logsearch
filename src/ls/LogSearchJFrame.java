@@ -13,7 +13,8 @@ import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame {
 	
-	public static final LogSearchJFrame instance = new LogSearchJFrame();
+	private static final String TITLE = "LogSearch";
+	private static final LogSearchJFrame instance = new LogSearchJFrame();
 	
 	public static void main (String[] args) {
 		instance.setVisible(true);
@@ -23,7 +24,7 @@ public class LogSearchJFrame extends JFrame {
 	private final JButton dirButton = new JButton("...");
 	private final JTextField nameField = new JTextField();
 	private final JTextField searchField = new JTextField();
-	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(7, 1, 999, 1));
+	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 999, 1));
 	private final JButton startButton = new JButton("Start");
 	private final JButton stopButton = new JButton("Stop");
 	private final JButton openButton = new JButton("Open");
@@ -36,7 +37,7 @@ public class LogSearchJFrame extends JFrame {
 	private File editor;
 	
 	public LogSearchJFrame () {
-		super("LogSearch");
+		super(TITLE);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		load();
 		listeners();
@@ -281,7 +282,7 @@ public class LogSearchJFrame extends JFrame {
 		
 		save();
 		
-		FindThread ft = new FindThread(dir, startDate, name, text);
+		FindThread ft = new FindThread(this, dir, startDate, name, text);
 		FindThread.running = true;
 		ft.start();
 	}
@@ -323,5 +324,18 @@ public class LogSearchJFrame extends JFrame {
 		p2.add(sp, BorderLayout.CENTER);
 		p2.add(p5, BorderLayout.SOUTH);
 		return p2;
+	}
+
+	public void update (final int i) {
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run () {
+				if (i >= 0) {
+					setTitle(TITLE + " [" + i + "]");
+				} else {
+					setTitle(TITLE);
+				}
+			}
+		});
 	}
 }

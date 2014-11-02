@@ -10,14 +10,18 @@ import javax.swing.JOptionPane;
 
 public class FindThread extends Thread {
 	public static volatile boolean running;
+	
+	private final LogSearchJFrame frame;
 	private final File dir;
 	private final Date startDate;
 	private final String name;
 	private final String text;
+	private int files;
 	
-	public FindThread (File dir, Date startDate, String name, String text) {
+	public FindThread (LogSearchJFrame frame, File dir, Date startDate, String name, String text) {
 		setPriority(Thread.MIN_PRIORITY);
 		setDaemon(true);
+		this.frame = frame;
 		this.dir = dir;
 		this.startDate = startDate;
 		this.name = name;
@@ -27,12 +31,19 @@ public class FindThread extends Thread {
 	@Override
 	public void run () {
 		try {
+			System.out.println("run");
+			running = true;
+			frame.update(0);
 			find(dir);
+			
 		} catch (Exception e) {
 			e.printStackTrace();
-			JOptionPane.showMessageDialog(LogSearchJFrame.instance, e.toString(), "Could not search", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(frame, e.toString(), "Could not search", JOptionPane.ERROR_MESSAGE);
+			
+		} finally {
+			running = false;
+			frame.update(-1);
 		}
-		running = false;
 	}
 	
 	private List<Line> scan (File f) throws Exception {
@@ -91,6 +102,7 @@ public class FindThread extends Thread {
 			} else if (file.isDirectory()) {
 				find(file);
 			}
+			frame.update(files++);
 		}
 	}
 	
@@ -100,7 +112,7 @@ public class FindThread extends Thread {
 			date = new Date(file.lastModified());
 		}
 		if (date.after(startDate)) {
-			LogSearchJFrame.instance.add(new Result(file.getName(), date, file, null, scan(file)));
+			frame.add(new Result(file.getName(), date, file, null, scan(file)));
 		}
 	}
 	
@@ -131,9 +143,10 @@ public class FindThread extends Thread {
 								lines = scan(is);
 							}
 						}
-						LogSearchJFrame.instance.add(new Result(filename, date, file, ze.getName(), lines));
+						frame.add(new Result(filename, date, file, ze.getName(), lines));
 					}
 				}
+				frame.update(files++);
 			}
 		}
 	}
