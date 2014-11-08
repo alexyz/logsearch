@@ -5,6 +5,8 @@ import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.zip.*;
 
@@ -13,10 +15,16 @@ import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame {
 	
+	
 	private static final String TITLE = "LogSearch";
 	private static final LogSearchJFrame instance = new LogSearchJFrame();
 	
 	public static void main (String[] args) {
+		try {
+			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 		instance.setVisible(true);
 	}
 	
@@ -24,15 +32,16 @@ public class LogSearchJFrame extends JFrame {
 	private final JButton dirButton = new JButton("...");
 	private final JTextField nameField = new JTextField();
 	private final JTextField searchField = new JTextField();
-	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 999, 1));
+	private final JSpinner startSpinner = new JSpinner();
 	private final JButton startButton = new JButton("Start");
 	private final JButton stopButton = new JButton("Stop");
 	private final JButton openButton = new JButton("Open");
 	private final ResultTableModel tableModel = new ResultTableModel();
 	private final JTable table = new JTable(tableModel);
-	private final JButton editorButton = new JButton("...");
+	private final JButton editorButton = new JButton("Editor...");
 	private final JLabel editorLabel = new JLabel();
 	private final JButton previewButton = new JButton("Preview");
+	private final JToggleButton showAllButton = new JToggleButton("Show All");
 	
 	private File editor;
 	
@@ -41,7 +50,7 @@ public class LogSearchJFrame extends JFrame {
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		load();
 		listeners();
-		setContentPane(content());
+		setContentPane(createContentPane());
 		setPreferredSize(new Dimension(800, 600));
 		pack();
 	}
@@ -58,8 +67,8 @@ public class LogSearchJFrame extends JFrame {
 			dirField.setText(p.getProperty("dir", System.getProperty("user.dir")));
 			nameField.setText(p.getProperty("name", "server.log"));
 			searchField.setText(p.getProperty("search", "a"));
-			ageSpinner.setValue(Integer.parseInt(p.getProperty("age", "7")));
-			editor = new File(p.getProperty("editor", defaultEditor().getAbsolutePath()));
+			//ageSpinner.setValue(Integer.parseInt(p.getProperty("age", "7")));
+			editor = new File(p.getProperty("editor", LogSearchUtil.defaultEditor().getAbsolutePath()));
 			if (!editor.exists()) {
 				editor = null;
 			}
@@ -76,7 +85,7 @@ public class LogSearchJFrame extends JFrame {
 		p.setProperty("name", nameField.getText());
 		p.setProperty("search", searchField.getText());
 		p.setProperty("editor", editor != null ? editor.getAbsolutePath() : "");
-		p.setProperty("age", String.valueOf(ageSpinner.getValue()));
+		//p.setProperty("age", String.valueOf(ageSpinner.getValue()));
 		File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
 		try (OutputStream os = new FileOutputStream(f)) {
 			p.store(os, null);
@@ -86,11 +95,20 @@ public class LogSearchJFrame extends JFrame {
 		}
 	}
 	
-	public void add (final Result fd) {
+	public void searchAdd (final Result fd) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
+				int r = table.getSelectedRow();
+				Result result = null;
+				if (r >= 0) {
+					result = tableModel.getResult(r);
+				}
 				tableModel.add(fd);
+				int r2 = tableModel.getRow(result);
+				if (r2 >= 0) {
+					table.getSelectionModel().setSelectionInterval(r2, r2);
+				}
 			}
 		});
 	}
@@ -180,6 +198,22 @@ public class LogSearchJFrame extends JFrame {
 				}
 			}
 		});
+		
+		showAllButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed (ActionEvent e) {
+				int r = table.getSelectedRow();
+				Result result = null;
+				if (r >= 0) {
+					result = tableModel.getResult(r);
+				}
+				tableModel.setShowAll(showAllButton.isSelected());
+				int r2 = tableModel.getRow(result);
+				if (r2 >= 0) {
+					table.getSelectionModel().setSelectionInterval(r2, r2);
+				}
+			}
+		});
 	}
 	
 	private void preview () {
@@ -207,58 +241,17 @@ public class LogSearchJFrame extends JFrame {
 				Result result = tableModel.getResult(r);
 				File file;
 				if (result.file.getName().toLowerCase().endsWith(".gz")) {
-					file = ungzip(result.file);
+					file = LogSearchUtil.ungzip(result.file);
 				} else if (result.file.getName().toLowerCase().endsWith(".zip")) {
-					file = unzip(result.file, result.entry);
+					file = LogSearchUtil.unzip(result.file, result.entry);
 				} else {
 					file = result.file;
 				}
-				Runtime.getRuntime().exec(new String[] { editor.getAbsolutePath(), file.getAbsolutePath() });
+				LogSearchUtil.open(editor, file);
 			}
 		}
 	}
-	
-	private static File unzip (File zipfile, String entry) throws Exception {
-		System.out.println("unzip " + zipfile + ", " + entry);
-		try (ZipFile zf = new ZipFile(zipfile)) {
-			ZipEntry ze = zf.getEntry(entry);
-			try (InputStream is = zf.getInputStream(ze)) {
-				return copy(is, zipfile.getName() + "." + ze.getName());
-			}
-		}
-	}
-	
-	private static File ungzip (File gzfile) throws Exception {
-		System.out.println("ungzip " + gzfile);
-		try (InputStream is = new GZIPInputStream(new FileInputStream(gzfile))) {
-			return copy(is, gzfile.getName());
-		}
-	}
-	
-	private static File copy (InputStream is, String tmpname) throws Exception {
-		File file = File.createTempFile(tmpname + ".", null);
-		file.deleteOnExit();
-		try (OutputStream os = new FileOutputStream(file)) {
-			byte[] buf = new byte[65536];
-			int l;
-			while ((l = is.read(buf)) != -1) {
-				os.write(buf, 0, l);
-			}
-		}
-		return file;
-	}
-	
-	private static File defaultEditor () {
-		Map<String, String> env = System.getenv();
-		String pf86 = env.get("ProgramFiles(x86)");
-		String windir = env.get("windir");
-		File npp = new File(pf86 + "\\Notepad++\\notepad++.exe");
-		if (npp.exists()) {
-			return npp;
-		}
-		return new File(windir + "\\notepad.exe");
-	}
-	
+
 	private void search () {
 		System.out.println("search");
 		
@@ -271,9 +264,7 @@ public class LogSearchJFrame extends JFrame {
 		
 		final String text = searchField.getText();
 		final File dir = new File(dirField.getText());
-		Calendar startCal = new GregorianCalendar();
-		startCal.add(Calendar.DATE, -(int) ageSpinner.getValue());
-		final Date startDate = startCal.getTime();
+		final Date startDate = (Date) startSpinner.getValue();
 		final String name = nameField.getText();
 		if (name.length() == 0) {
 			System.out.println("no name filter");
@@ -287,10 +278,10 @@ public class LogSearchJFrame extends JFrame {
 		ft.start();
 	}
 	
-	private JPanel content () {
-		dirField.setColumns(30);
-		nameField.setColumns(10);
-		searchField.setColumns(20);
+	private JPanel createContentPane () {
+		dirField.setColumns(15);
+		nameField.setColumns(15);
+		searchField.setColumns(15);
 		
 		JPanel p = new JPanel();
 		p.add(new JLabel("Directory"));
@@ -299,13 +290,28 @@ public class LogSearchJFrame extends JFrame {
 		p.add(new JLabel("Name Contains"));
 		p.add(nameField);
 		
+		{
+			Calendar cal = new GregorianCalendar();
+			int y = cal.get(Calendar.YEAR);
+			int m = cal.get(Calendar.MONTH);
+			int d = cal.get(Calendar.DATE);
+			GregorianCalendar startCal = new GregorianCalendar(y, m, d);
+			startCal.add(Calendar.DATE, -14);
+			Date dstart = startCal.getTime();
+			Date dmax = new GregorianCalendar(y + 1, m, d).getTime();
+			Date dmin = new GregorianCalendar(y - 1, m, d).getTime();
+			startSpinner.setModel(new SpinnerDateModel(dstart, dmin, dmax, Calendar.DATE));
+			startSpinner.setEditor(new JSpinner.DateEditor(startSpinner, ((SimpleDateFormat)DateFormat.getDateInstance()).toPattern()));
+		}
+		
 		JPanel p3 = new JPanel();
 		p3.add(new JLabel("File Contains"));
 		p3.add(searchField);
-		p3.add(new JLabel("Max Age"));
-		p3.add(ageSpinner);
+		p3.add(new JLabel("Start Date"));
+		p3.add(startSpinner);
 		p3.add(startButton);
 		p3.add(stopButton);
+		p3.add(showAllButton);
 		
 		JScrollPane sp = new JScrollPane(table);
 		
@@ -326,7 +332,7 @@ public class LogSearchJFrame extends JFrame {
 		return p2;
 	}
 
-	public void update (final int i) {
+	public void searchUpdate (final int i) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
@@ -337,5 +343,9 @@ public class LogSearchJFrame extends JFrame {
 				}
 			}
 		});
+	}
+
+	public void searchEnd (String msg) {
+		JOptionPane.showMessageDialog(this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
 	}
 }
