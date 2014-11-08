@@ -5,12 +5,17 @@
 		<jar destfile="dist/logsearch.jar" basedir="bin/">
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
+				<attribute name="Class-Path" value="logsearchdeps.jar" />
 			</manifest>
+		</jar>
+		<jar destfile="dist/logsearchdeps.jar">
+			<zipfileset file="lib/commons-io-2.4.jar" />
 		</jar>
 	</target>
 
 	<target name="deploy" depends="jar">
 		<copy file="dist/logsearch.jar" tofile="${user.home}/Dropbox/Public/logsearch.jar" />
+		<copy file="dist/logsearchdeps.jar" tofile="${user.home}/Dropbox/Public/logsearchdeps.jar" />
 	</target>
 
 </project>
