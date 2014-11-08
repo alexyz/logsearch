@@ -1,14 +1,15 @@
 package ls;
 
 import java.io.*;
-import java.text.*;
 import java.util.*;
-import java.util.regex.*;
 import java.util.zip.*;
 
 import javax.swing.JOptionPane;
 
+import org.apache.commons.io.input.CountingInputStream;
+
 public class FindThread extends Thread {
+
 	public static volatile boolean running;
 	
 	private final LogSearchJFrame frame;
@@ -17,6 +18,7 @@ public class FindThread extends Thread {
 	private final String name;
 	private final String text;
 	private int files;
+	private long bytes;
 	
 	public FindThread (LogSearchJFrame frame, File dir, Date startDate, String name, String text) {
 		setPriority(Thread.MIN_PRIORITY);
@@ -24,7 +26,7 @@ public class FindThread extends Thread {
 		this.frame = frame;
 		this.dir = dir;
 		this.startDate = startDate;
-		this.name = name;
+		this.name = name.toLowerCase();
 		this.text = text;
 	}
 	
@@ -33,8 +35,13 @@ public class FindThread extends Thread {
 		try {
 			System.out.println("run");
 			running = true;
-			frame.update(0);
+			long t = System.nanoTime();
+			frame.searchUpdate(0);
 			find(dir);
+			long tns = System.nanoTime() - t;
+			long ts = tns / 1000000000;
+			long mb = bytes / 1000000;
+			frame.searchEnd("Files: " + files + " Megabytes: " + mb + " Seconds: " + ts);
 			
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -42,20 +49,20 @@ public class FindThread extends Thread {
 			
 		} finally {
 			running = false;
-			frame.update(-1);
+			frame.searchUpdate(-1);
 		}
 	}
 	
-	private List<Line> scan (File f) throws Exception {
+	private List<Line> scanFile (File f) throws Exception {
 		System.out.println("scan " + f);
 		if (text.length() > 0) {
 			try (InputStream is = new FileInputStream(f)) {
-				if (f.getName().endsWith(".gz")) {
+				if (f.getName().toLowerCase().endsWith(".gz")) {
 					try (InputStream is2 = new GZIPInputStream(is)) {
-						return scan(is2);
+						return scanInputStream(is2);
 					}
 				} else {
-					return scan(is);
+					return scanInputStream(is);
 				}
 			}
 		} else {
@@ -63,28 +70,34 @@ public class FindThread extends Thread {
 		}
 	}
 	
-	private List<Line> scan (InputStream is) throws Exception {
+	private List<Line> scanInputStream (InputStream is) throws Exception {
 		List<Line> lines = new ArrayList<>();
-		try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
-			String line;
-			int number = 0;
-			while ((line = br.readLine()) != null) {
-				if (!running) {
-					break;
-				}
-				number++;
-				if (line.contains(text)) {
-					System.out.println("matched line " + line);
-					if (line.length() > 1000) {
-						line = line.substring(0, 1000);
-					}
-					lines.add(new Line(line, number));
-					if (lines.size() > 100) {
+		try (CountingInputStream cis = new CountingInputStream(is)) {
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis))) {
+				String line;
+				int number = 0;
+				while ((line = br.readLine()) != null) {
+					if (!running) {
 						break;
+					}
+					number++;
+					if (line.contains(text)) {
+						System.out.println("matched line " + line);
+						if (line.length() > 1000) {
+							line = line.substring(0, 1000);
+						}
+						lines.add(new Line(line, number));
+						if (lines.size() > 100) {
+							break;
+						}
 					}
 				}
 			}
+			bytes += cis.getByteCount();
 		}
+		System.gc();
+		LogSearchUtil.slow();
+		frame.searchUpdate(files++);
 		return lines;
 	}
 	
@@ -94,25 +107,24 @@ public class FindThread extends Thread {
 				break;
 			}
 			if (file.isFile()) {
-				if (file.getName().endsWith(".zip")) {
+				if (file.getName().toLowerCase().endsWith(".zip")) {
 					findZip(file);
-				} else if (file.getName().contains(name)) {
+				} else if (file.getName().toLowerCase().contains(name)) {
 					findFile(file);
 				}
 			} else if (file.isDirectory()) {
 				find(file);
 			}
-			frame.update(files++);
 		}
 	}
 	
 	private void findFile (File file) throws Exception {
-		Date date = getDate(file.getName());
+		Date date = LogSearchUtil.getFileNameDate(file.getName());
 		if (date == null) {
 			date = new Date(file.lastModified());
 		}
-		if (date.after(startDate)) {
-			frame.add(new Result(file.getName(), date, file, null, scan(file)));
+		if (date.compareTo(startDate) >= 0) {
+			frame.searchAdd(new Result(file.getName(), date, file, null, scanFile(file)));
 		}
 	}
 	
@@ -128,45 +140,26 @@ public class FindThread extends Thread {
 				if (filename.contains("/")) {
 					filename = filename.substring(filename.lastIndexOf("/") + 1);
 				}
-				if (filename.contains(name)) {
-					Date date = getDate(filename);
+				if (filename.toLowerCase().contains(name)) {
+					Date date = LogSearchUtil.getFileNameDate(filename);
 					if (date == null) {
 						long t = ze.getTime();
 						if (t > 0) {
 							date = new Date(t);
 						}
 					}
-					if (date != null && date.after(startDate)) {
+					if (date != null && date.compareTo(startDate) >= 0) {
 						List<Line> lines = Collections.emptyList();
 						if (text.length() > 0) {
 							try (InputStream is = zf.getInputStream(ze)) {
-								lines = scan(is);
+								lines = scanInputStream(is);
 							}
 						}
-						frame.add(new Result(filename, date, file, ze.getName(), lines));
+						frame.searchAdd(new Result(filename, date, file, ze.getName(), lines));
 					}
 				}
-				frame.update(files++);
 			}
 		}
-	}
-	
-	private static Date getDate (String name) {
-		Pattern datePat = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})");
-		Date date = null;
-		if (name.length() > 0) {
-			Matcher mat = datePat.matcher(name);
-			if (mat.find()) {
-				String dateStr = mat.group(1);
-				DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-				try {
-					date = df.parse(dateStr);
-				} catch (ParseException e) {
-					e.printStackTrace();
-				}
-			}
-		}
-		return date;
 	}
 	
 }
