@@ -4,18 +4,17 @@ import java.io.File;
 import java.util.*;
 
 public class Result implements Comparable<Result> {
-	public final Date date;
+	public final List<Line> lines = new ArrayList<>(0);
 	public final String name;
+	public final Date date;
 	public final File file;
 	public final String entry;
-	public final List<Line> lines;
 	
-	public Result (String name, Date date, File file, String entry, List<Line> lines) {
-		this.name = name;
+	public Result (File file, Date date, String entry) {
+		this.name = file.getName() + (entry != null ? ":" + entry : "");
 		this.file = file;
 		this.date = date;
 		this.entry = entry;
-		this.lines = lines;
 	}
 	
 	@Override

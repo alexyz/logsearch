@@ -8,13 +8,11 @@ import java.io.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.zip.*;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
 
-public class LogSearchJFrame extends JFrame {
-	
+public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private static final String TITLE = "LogSearch";
 	private static final LogSearchJFrame instance = new LogSearchJFrame();
@@ -43,27 +41,31 @@ public class LogSearchJFrame extends JFrame {
 	private final JButton previewButton = new JButton("Preview");
 	private final JToggleButton showAllButton = new JToggleButton("Show All");
 	
+	private volatile SearchThread searchThread;
+	
 	private File editor;
 	
 	public LogSearchJFrame () {
 		super(TITLE);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
-		load();
-		listeners();
-		setContentPane(createContentPane());
+		initComponents();
+		loadProperties();
+		initListeners();
 		setPreferredSize(new Dimension(800, 600));
 		pack();
 	}
 	
-	private void load () {
+	private void loadProperties () {
 		try {
 			File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
+			
 			Properties p = new Properties();
 			if (f.exists()) {
 				try (InputStream is = new FileInputStream(f)) {
 					p.load(is);
 				}
 			}
+			
 			dirField.setText(p.getProperty("dir", System.getProperty("user.dir")));
 			nameField.setText(p.getProperty("name", "server.log"));
 			searchField.setText(p.getProperty("search", "a"));
@@ -73,47 +75,33 @@ public class LogSearchJFrame extends JFrame {
 				editor = null;
 			}
 			editorLabel.setText(editor != null ? editor.getName() : "no editor");
+			
 		} catch (Exception e) {
 			e.printStackTrace();
 			JOptionPane.showMessageDialog(this, e.toString(), "Load Properties", JOptionPane.WARNING_MESSAGE);
 		}
 	}
 	
-	private void save () {
+	private void saveProperties () {
 		Properties p = new Properties();
 		p.setProperty("dir", dirField.getText());
 		p.setProperty("name", nameField.getText());
 		p.setProperty("search", searchField.getText());
 		p.setProperty("editor", editor != null ? editor.getAbsolutePath() : "");
 		//p.setProperty("age", String.valueOf(ageSpinner.getValue()));
+		
 		File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
+		
 		try (OutputStream os = new FileOutputStream(f)) {
 			p.store(os, null);
+			
 		} catch (Exception e) {
 			e.printStackTrace();
 			JOptionPane.showMessageDialog(this, e.toString(), "Save Properties", JOptionPane.WARNING_MESSAGE);
 		}
 	}
 	
-	public void searchAdd (final Result fd) {
-		SwingUtilities.invokeLater(new Runnable() {
-			@Override
-			public void run () {
-				int r = table.getSelectedRow();
-				Result result = null;
-				if (r >= 0) {
-					result = tableModel.getResult(r);
-				}
-				tableModel.add(fd);
-				int r2 = tableModel.getRow(result);
-				if (r2 >= 0) {
-					table.getSelectionModel().setSelectionInterval(r2, r2);
-				}
-			}
-		});
-	}
-	
-	private void listeners () {
+	private void initListeners () {
 		dirButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
@@ -165,7 +153,9 @@ public class LogSearchJFrame extends JFrame {
 		stopButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				FindThread.running = false;
+				if (searchThread != null) {
+					searchThread.running = false;
+				}
 			}
 		});
 		
@@ -227,7 +217,7 @@ public class LogSearchJFrame extends JFrame {
 					sb.append("Line " + line.number + "\n");
 					sb.append(line.line + "\n");
 				}
-				TextJDialog d = new TextJDialog(this, "Lines", sb.toString());
+				TextJDialog d = new TextJDialog(this, "Preview", sb.toString());
 				d.setVisible(true);
 			}
 		}
@@ -240,13 +230,14 @@ public class LogSearchJFrame extends JFrame {
 			if (editor != null) {
 				Result result = tableModel.getResult(r);
 				File file;
-				if (result.file.getName().toLowerCase().endsWith(".gz")) {
-					file = LogSearchUtil.ungzip(result.file);
-				} else if (result.file.getName().toLowerCase().endsWith(".zip")) {
+				
+				if (result.entry != null) {
 					file = LogSearchUtil.unzip(result.file, result.entry);
+					
 				} else {
-					file = result.file;
+					file = LogSearchUtil.optionallyDecompress(result.file);
 				}
+				
 				LogSearchUtil.open(editor, file);
 			}
 		}
@@ -255,7 +246,7 @@ public class LogSearchJFrame extends JFrame {
 	private void search () {
 		System.out.println("search");
 		
-		if (FindThread.running) {
+		if (searchThread != null) {
 			System.out.println("already running");
 			return;
 		}
@@ -271,24 +262,23 @@ public class LogSearchJFrame extends JFrame {
 			return;
 		}
 		
-		save();
+		saveProperties();
 		
-		FindThread ft = new FindThread(this, dir, startDate, name, text);
-		FindThread.running = true;
-		ft.start();
+		searchThread = new SearchThread(this, dir, startDate, null, name, text);
+		searchThread.start();
 	}
 	
-	private JPanel createContentPane () {
+	private void initComponents () {
 		dirField.setColumns(15);
 		nameField.setColumns(15);
 		searchField.setColumns(15);
 		
-		JPanel p = new JPanel();
-		p.add(new JLabel("Directory"));
-		p.add(dirField);
-		p.add(dirButton);
-		p.add(new JLabel("Name Contains"));
-		p.add(nameField);
+		JPanel northPanel1 = new JPanel();
+		northPanel1.add(new JLabel("Directory"));
+		northPanel1.add(dirField);
+		northPanel1.add(dirButton);
+		northPanel1.add(new JLabel("Name Contains"));
+		northPanel1.add(nameField);
 		
 		{
 			Calendar cal = new GregorianCalendar();
@@ -296,7 +286,7 @@ public class LogSearchJFrame extends JFrame {
 			int m = cal.get(Calendar.MONTH);
 			int d = cal.get(Calendar.DATE);
 			GregorianCalendar startCal = new GregorianCalendar(y, m, d);
-			startCal.add(Calendar.DATE, -14);
+			startCal.add(Calendar.DATE, -7);
 			Date dstart = startCal.getTime();
 			Date dmax = new GregorianCalendar(y + 1, m, d).getTime();
 			Date dmin = new GregorianCalendar(y - 1, m, d).getTime();
@@ -304,40 +294,61 @@ public class LogSearchJFrame extends JFrame {
 			startSpinner.setEditor(new JSpinner.DateEditor(startSpinner, ((SimpleDateFormat)DateFormat.getDateInstance()).toPattern()));
 		}
 		
-		JPanel p3 = new JPanel();
-		p3.add(new JLabel("File Contains"));
-		p3.add(searchField);
-		p3.add(new JLabel("Start Date"));
-		p3.add(startSpinner);
-		p3.add(startButton);
-		p3.add(stopButton);
-		p3.add(showAllButton);
+		JPanel northPanel2 = new JPanel();
+		northPanel2.add(new JLabel("File Contains"));
+		northPanel2.add(searchField);
+		northPanel2.add(new JLabel("Start Date"));
+		northPanel2.add(startSpinner);
+		northPanel2.add(startButton);
+		northPanel2.add(stopButton);
+		northPanel2.add(showAllButton);
 		
-		JScrollPane sp = new JScrollPane(table);
+		JScrollPane tableScroller = new JScrollPane(table);
 		
-		JPanel p5 = new JPanel();
-		p5.add(previewButton);
-		p5.add(editorLabel);
-		p5.add(editorButton);
-		p5.add(openButton);
+		JPanel southPanel = new JPanel();
+		southPanel.add(previewButton);
+		southPanel.add(editorLabel);
+		southPanel.add(editorButton);
+		southPanel.add(openButton);
 		
-		JPanel p4 = new JPanel(new GridLayout(2, 1));
-		p4.add(p);
-		p4.add(p3);
+		JPanel northPanel = new JPanel(new GridLayout(2, 1));
+		northPanel.add(northPanel1);
+		northPanel.add(northPanel2);
 		
-		JPanel p2 = new JPanel(new BorderLayout());
-		p2.add(p4, BorderLayout.NORTH);
-		p2.add(sp, BorderLayout.CENTER);
-		p2.add(p5, BorderLayout.SOUTH);
-		return p2;
+		JPanel contentPanel = new JPanel(new BorderLayout());
+		contentPanel.add(northPanel, BorderLayout.NORTH);
+		contentPanel.add(tableScroller, BorderLayout.CENTER);
+		contentPanel.add(southPanel, BorderLayout.SOUTH);
+
+		setContentPane(contentPanel);
 	}
 
-	public void searchUpdate (final int i) {
+	@Override
+	public void searchResult (final Result fd) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
-				if (i >= 0) {
-					setTitle(TITLE + " [" + i + "]");
+				int r = table.getSelectedRow();
+				Result result = null;
+				if (r >= 0) {
+					result = tableModel.getResult(r);
+				}
+				tableModel.add(fd);
+				int r2 = tableModel.getRow(result);
+				if (r2 >= 0) {
+					table.getSelectionModel().setSelectionInterval(r2, r2);
+				}
+			}
+		});
+	}
+	
+	@Override
+	public void searchUpdate (final String msg) {
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run () {
+				if (msg != null && msg.length() > 0) {
+					setTitle(TITLE + " [" + msg + "]");
 				} else {
 					setTitle(TITLE);
 				}
@@ -345,7 +356,15 @@ public class LogSearchJFrame extends JFrame {
 		});
 	}
 
-	public void searchEnd (String msg) {
-		JOptionPane.showMessageDialog(this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
+	@Override
+	public void searchComplete (final String msg) {
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run () {
+				setTitle(TITLE);
+				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
+			}
+		});
+		searchThread = null;
 	}
 }
