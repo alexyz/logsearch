@@ -2,20 +2,18 @@
 <project default="jar">
 
 	<target name="jar">
-		<jar destfile="dist/logsearch.jar" basedir="bin/">
+		<jar destfile="dist/logsearch.jar">
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
-				<attribute name="Class-Path" value="logsearchdeps.jar" />
 			</manifest>
-		</jar>
-		<jar destfile="dist/logsearchdeps.jar">
-			<zipfileset file="lib/commons-io-2.4.jar" />
+			<fileset dir="bin" />
+			<zipfileset src="lib/commons-io-2.4.jar" />
+			<zipfileset src="lib/commons-compress-1.9.jar" />
 		</jar>
 	</target>
 
 	<target name="deploy" depends="jar">
 		<copy file="dist/logsearch.jar" tofile="${user.home}/Dropbox/Public/logsearch.jar" />
-		<copy file="dist/logsearchdeps.jar" tofile="${user.home}/Dropbox/Public/logsearchdeps.jar" />
 	</target>
 
 </project>

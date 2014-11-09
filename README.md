@@ -13,5 +13,4 @@ Screenshots
 Download
 --------
 
-[Runnable jar file](https://dl.dropboxusercontent.com/u/8069847/logsearch.jar)
-[Dependencies jar](https://dl.dropboxusercontent.com/u/8069847/logsearchdeps.jar)
+[Runnable jar file (including dependencies)](https://dl.dropboxusercontent.com/u/8069847/logsearch.jar)
