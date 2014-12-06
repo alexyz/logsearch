@@ -8,16 +8,24 @@ import java.io.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.prefs.BackingStoreException;
+import java.util.prefs.Preferences;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
 	
+	private static final String START_PREF = "start";
+	private static final String EDITOR_PREF = "editor";
+	private static final String AGE_PREF = "age";
+	private static final String SEARCH_PREF = "search";
+	private static final String NAME_PREF = "name";
+	private static final String DIR_PREF = "dir";
 	private static final String TITLE = "LogSearch";
-	private static final LogSearchJFrame instance = new LogSearchJFrame();
 	
 	public static void main (String[] args) {
+		LogSearchJFrame instance = new LogSearchJFrame();
 		try {
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
 		} catch (Exception e) {
@@ -30,7 +38,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JButton dirButton = new JButton("...");
 	private final JTextField nameField = new JTextField();
 	private final JTextField searchField = new JTextField();
-	private final JSpinner startSpinner = new JSpinner();
+	private final JSpinner startDateSpinner = new JSpinner();
+	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(7, 1, 999, 1));
 	private final JButton startButton = new JButton("Start");
 	private final JButton stopButton = new JButton("Stop");
 	private final JButton openButton = new JButton("Open");
@@ -40,6 +49,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JLabel editorLabel = new JLabel();
 	private final JButton previewButton = new JButton("Preview");
 	private final JToggleButton showAllButton = new JToggleButton("Show All");
+	private final Preferences prefs = Preferences.userRoot().node(getClass().getName());
+	private final JRadioButton startDateButton = new JRadioButton("Date");
+	private final JRadioButton ageButton = new JRadioButton("Age");
 	
 	private volatile SearchThread searchThread;
 	
@@ -49,55 +61,38 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		super(TITLE);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		initComponents();
-		loadProperties();
 		initListeners();
+		loadPrefs();
 		setPreferredSize(new Dimension(800, 600));
 		pack();
 	}
 	
-	private void loadProperties () {
-		try {
-			File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
-			
-			Properties p = new Properties();
-			if (f.exists()) {
-				try (InputStream is = new FileInputStream(f)) {
-					p.load(is);
-				}
-			}
-			
-			dirField.setText(p.getProperty("dir", System.getProperty("user.dir")));
-			nameField.setText(p.getProperty("name", "server.log"));
-			searchField.setText(p.getProperty("search", "a"));
-			//ageSpinner.setValue(Integer.parseInt(p.getProperty("age", "7")));
-			editor = new File(p.getProperty("editor", LogSearchUtil.defaultEditor().getAbsolutePath()));
-			if (!editor.exists()) {
-				editor = null;
-			}
-			editorLabel.setText(editor != null ? editor.getName() : "no editor");
-			
-		} catch (Exception e) {
-			e.printStackTrace();
-			JOptionPane.showMessageDialog(this, e.toString(), "Load Properties", JOptionPane.WARNING_MESSAGE);
+	private void loadPrefs () {
+		dirField.setText(prefs.get(DIR_PREF, System.getProperty("user.dir")));
+		nameField.setText(prefs.get(NAME_PREF, "server.log"));
+		searchField.setText(prefs.get(SEARCH_PREF, "a"));
+		ageSpinner.setValue(prefs.getInt(AGE_PREF, 7));
+		editor = new File(prefs.get(EDITOR_PREF, LogSearchUtil.defaultEditor().getAbsolutePath()));
+		if (!editor.exists()) {
+			editor = null;
 		}
+		editorLabel.setText(editor != null ? editor.getName() : "no editor");
+		startDateButton.setSelected(prefs.getBoolean(START_PREF, true));
+		ageButton.setSelected(!startDateButton.isSelected());
 	}
 	
-	private void saveProperties () {
-		Properties p = new Properties();
-		p.setProperty("dir", dirField.getText());
-		p.setProperty("name", nameField.getText());
-		p.setProperty("search", searchField.getText());
-		p.setProperty("editor", editor != null ? editor.getAbsolutePath() : "");
-		//p.setProperty("age", String.valueOf(ageSpinner.getValue()));
-		
-		File f = new File(System.getProperty("user.home") + File.separator + "LogSearch.properties");
-		
-		try (OutputStream os = new FileOutputStream(f)) {
-			p.store(os, null);
-			
-		} catch (Exception e) {
+	private void savePrefs () {
+		prefs.put(DIR_PREF, dirField.getText());
+		prefs.put(NAME_PREF, nameField.getText());
+		prefs.put(SEARCH_PREF, searchField.getText());
+		prefs.put(EDITOR_PREF, editor != null ? editor.getAbsolutePath() : "");
+		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
+		prefs.putBoolean(START_PREF, startDateButton.isSelected());
+		try {
+			prefs.sync();
+		} catch (BackingStoreException e) {
 			e.printStackTrace();
-			JOptionPane.showMessageDialog(this, e.toString(), "Save Properties", JOptionPane.WARNING_MESSAGE);
+			JOptionPane.showMessageDialog(this, e.toString(), "Save Preferences", JOptionPane.WARNING_MESSAGE);
 		}
 	}
 	
@@ -204,6 +199,17 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 			}
 		});
+		
+		ItemListener il = new ItemListener() {
+			@Override
+			public void itemStateChanged (ItemEvent e) {
+				startDateSpinner.setEnabled(startDateButton.isSelected());
+				ageSpinner.setEnabled(ageButton.isSelected());
+			}
+		};
+		
+		startDateButton.addItemListener(il);
+		ageButton.addItemListener(il);
 	}
 	
 	private void preview () {
@@ -244,7 +250,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 
 	private void search () {
-		System.out.println("search");
+		System.out.println(SEARCH_PREF);
 		
 		if (searchThread != null) {
 			System.out.println("already running");
@@ -255,14 +261,21 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		final String text = searchField.getText();
 		final File dir = new File(dirField.getText());
-		final Date startDate = (Date) startSpinner.getValue();
+		final Date startDate;
+		if (startDateButton.isSelected()) {
+			startDate = (Date) startDateSpinner.getValue();
+		} else {
+			Calendar cal = new GregorianCalendar();
+			cal.add(Calendar.DATE, -(int)ageSpinner.getValue());
+			startDate = cal.getTime();
+		}
 		final String name = nameField.getText();
 		if (name.length() == 0) {
 			System.out.println("no name filter");
 			return;
 		}
 		
-		saveProperties();
+		savePrefs();
 		
 		searchThread = new SearchThread(this, dir, startDate, null, name, text);
 		searchThread.start();
@@ -290,18 +303,26 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			Date dstart = startCal.getTime();
 			Date dmax = new GregorianCalendar(y + 1, m, d).getTime();
 			Date dmin = new GregorianCalendar(y - 1, m, d).getTime();
-			startSpinner.setModel(new SpinnerDateModel(dstart, dmin, dmax, Calendar.DATE));
-			startSpinner.setEditor(new JSpinner.DateEditor(startSpinner, ((SimpleDateFormat)DateFormat.getDateInstance()).toPattern()));
+			startDateSpinner.setModel(new SpinnerDateModel(dstart, dmin, dmax, Calendar.DATE));
+			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, ((SimpleDateFormat)DateFormat.getDateInstance()).toPattern()));
 		}
+		
+		ButtonGroup bg = new ButtonGroup();
+		bg.add(startDateButton);
+		bg.add(ageButton);
 		
 		JPanel northPanel2 = new JPanel();
 		northPanel2.add(new JLabel("File Contains"));
 		northPanel2.add(searchField);
-		northPanel2.add(new JLabel("Start Date"));
-		northPanel2.add(startSpinner);
-		northPanel2.add(startButton);
-		northPanel2.add(stopButton);
-		northPanel2.add(showAllButton);
+		northPanel2.add(startDateButton);
+		northPanel2.add(startDateSpinner);
+		northPanel2.add(ageButton);
+		northPanel2.add(ageSpinner);
+		
+		JPanel northPanel3 = new JPanel();
+		northPanel3.add(startButton);
+		northPanel3.add(stopButton);
+		northPanel3.add(showAllButton);
 		
 		JScrollPane tableScroller = new JScrollPane(table);
 		
@@ -311,9 +332,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		southPanel.add(editorButton);
 		southPanel.add(openButton);
 		
-		JPanel northPanel = new JPanel(new GridLayout(2, 1));
+		JPanel northPanel = new JPanel(new GridLayout(3, 1));
 		northPanel.add(northPanel1);
 		northPanel.add(northPanel2);
+		northPanel.add(northPanel3);
 		
 		JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(northPanel, BorderLayout.NORTH);
