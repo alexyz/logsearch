@@ -34,8 +34,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		instance.setVisible(true);
 	}
 	
-	private final JTextField dirField = new JTextField();
-	private final JButton dirButton = new JButton("...");
+	private final JLabel dirLabel = new JLabel();
+	private final JButton dirButton = new JButton("Directories...");
 	private final JTextField nameField = new JTextField();
 	private final JTextField searchField = new JTextField();
 	private final JSpinner startDateSpinner = new JSpinner();
@@ -49,9 +49,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JLabel editorLabel = new JLabel();
 	private final JButton previewButton = new JButton("Preview");
 	private final JToggleButton showAllButton = new JToggleButton("Show All");
-	private final Preferences prefs = Preferences.userRoot().node(getClass().getName());
+	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
 	private final JRadioButton startDateButton = new JRadioButton("Date");
 	private final JRadioButton ageButton = new JRadioButton("Age");
+	private final List<File> dirs = new ArrayList<>();
 	
 	private volatile SearchThread searchThread;
 	
@@ -68,7 +69,17 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 	
 	private void loadPrefs () {
-		dirField.setText(prefs.get(DIR_PREF, System.getProperty("user.dir")));
+		System.out.println("load prefs");
+		String dirStr = prefs.get(DIR_PREF, System.getProperty("user.dir"));
+		System.out.println("loaded dir pref: " + dirStr);
+		StringTokenizer t = new StringTokenizer(dirStr, File.pathSeparator);
+		while (t.hasMoreTokens()) {
+			File d = new File(t.nextToken());
+			if (d.isDirectory()) {
+				dirs.add(d);
+			}
+		}
+		dirLabel.setText(String.valueOf(dirs.size()));
 		nameField.setText(prefs.get(NAME_PREF, "server.log"));
 		searchField.setText(prefs.get(SEARCH_PREF, "a"));
 		ageSpinner.setValue(prefs.getInt(AGE_PREF, 7));
@@ -82,7 +93,16 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 	
 	private void savePrefs () {
-		prefs.put(DIR_PREF, dirField.getText());
+		System.out.println("save prefs");
+		StringBuilder dirSb = new StringBuilder();
+		for (File dir : dirs) {
+			if (dirSb.length() > 0) {
+				dirSb.append(File.pathSeparator);
+			}
+			dirSb.append(dir.getAbsolutePath());
+		}
+		System.out.println("save dir pref: " + dirSb);
+		prefs.put(DIR_PREF, dirSb.toString());
 		prefs.put(NAME_PREF, nameField.getText());
 		prefs.put(SEARCH_PREF, searchField.getText());
 		prefs.put(EDITOR_PREF, editor != null ? editor.getAbsolutePath() : "");
@@ -97,15 +117,22 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 	
 	private void initListeners () {
+		addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosed (WindowEvent e) {
+				savePrefs();
+			}
+		});
+			
 		dirButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				JFileChooser fc = new JFileChooser();
-				fc.setCurrentDirectory(new File(dirField.getText()));
-				fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-				int o = fc.showOpenDialog(LogSearchJFrame.this);
-				if (o == JFileChooser.APPROVE_OPTION) {
-					dirField.setText(fc.getSelectedFile().getAbsolutePath());
+				DirectoryJDialog d = new DirectoryJDialog(LogSearchJFrame.this, "Log Directories", dirs);
+				d.setVisible(true);
+				if (d.isOk()) {
+					dirs.clear();
+					dirs.addAll(d.getDirs());
+					dirLabel.setText(String.valueOf(dirs.size()));
 				}
 			}
 		});
@@ -257,10 +284,34 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			return;
 		}
 		
+		if (dirs.size() == 0) {
+			System.out.println("no dirs");
+			return;
+		}
+		
 		tableModel.clear();
 		
 		final String text = searchField.getText();
-		final File dir = new File(dirField.getText());
+		
+		final TreeSet<File> searchDirs = new TreeSet<>();
+		// dirs is sorted, higher dirs are first
+		for (File dir : dirs) {
+			String dirStr = dir.getAbsolutePath() + File.separator;
+			boolean add = true;
+			for (File searchDir : searchDirs) {
+				String searchDirStr = searchDir.getAbsolutePath() + File.separator;
+				// is this directory already included
+				if (dirStr.startsWith(searchDirStr)) {
+					add = false;
+					break;
+				}
+			}
+			if (add) {
+				searchDirs.add(dir);
+			}
+		}
+		System.out.println("dirs to search: " + searchDirs);
+		
 		final Date startDate;
 		if (startDateButton.isSelected()) {
 			startDate = (Date) startDateSpinner.getValue();
@@ -277,18 +328,16 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		savePrefs();
 		
-		searchThread = new SearchThread(this, dir, startDate, null, name, text);
+		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text);
 		searchThread.start();
 	}
 	
 	private void initComponents () {
-		dirField.setColumns(15);
 		nameField.setColumns(15);
 		searchField.setColumns(15);
 		
 		JPanel northPanel1 = new JPanel();
-		northPanel1.add(new JLabel("Directory"));
-		northPanel1.add(dirField);
+		northPanel1.add(dirLabel);
 		northPanel1.add(dirButton);
 		northPanel1.add(new JLabel("Name Contains"));
 		northPanel1.add(nameField);
