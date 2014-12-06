@@ -15,8 +15,8 @@ import javax.swing.border.TitledBorder;
 public class DirectoryJDialog extends JDialog {
 	
 	public static void main (String[] args) {
-		String ud = System.getProperty("user.dir");
-		String uh = System.getProperty("user.home");
+		File ud = new File(System.getProperty("user.dir"));
+		File uh = new File(System.getProperty("user.home"));
 		DirectoryJDialog d = new DirectoryJDialog(null, "Title", Arrays.asList(ud, uh));
 		d.setVisible(true);
 		System.exit(0);
@@ -31,10 +31,10 @@ public class DirectoryJDialog extends JDialog {
 	private final JButton cancelButton = new JButton("Cancel");
 	private boolean ok;
 	
-	public DirectoryJDialog (Frame frame, String title, List<String> dirs) {
+	public DirectoryJDialog (Frame frame, String title, List<File> dirs) {
 		super(frame, title);
-		for (String d : dirs) {
-			model.addElement(new File(d).getAbsoluteFile());
+		for (File d : dirs) {
+			model.addElement(d.getAbsoluteFile());
 		}
 		setContentPane(init());
 		setModal(true);
@@ -124,10 +124,10 @@ public class DirectoryJDialog extends JDialog {
 		return ok;
 	}
 	
-	public List<String> getDirs() {
-		ArrayList<String> l = new ArrayList<String>();
+	public Set<File> getDirs() {
+		Set<File> l = new TreeSet<>();
 		for (int n = 0; n < model.getSize(); n++) {
-			l.add(model.get(n).getAbsolutePath());
+			l.add(model.get(n));
 		}
 		return l;
 	}

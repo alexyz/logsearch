@@ -14,22 +14,21 @@ public class SearchThread extends Thread {
 	private final List<Result> results = new ArrayList<>();
 	private final Map<File,ZipFile> zipFiles = new TreeMap<>();
 	private final SearchListener listener;
-	private final File dir;
+	private final Set<File> dirs;
 	private final Date startDate;
 	private final Date endDate;
 	private final String nameLower;
 	private final String text;
 	
-	private int files;
 	private long bytes;
 
-	public SearchThread (SearchListener listener, File dir, Date startDate, Date endDate, String name, String text) {
+	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text) {
 		super("SearchThread");
 		setPriority(Thread.MIN_PRIORITY);
 		setDaemon(true);
 		this.endDate = endDate;
 		this.listener = listener;
-		this.dir = dir;
+		this.dirs = dirs;
 		this.startDate = startDate;
 		this.nameLower = name.toLowerCase();
 		this.text = text;
@@ -42,13 +41,15 @@ public class SearchThread extends Thread {
 			running = true;
 			listener.searchUpdate("finding");
 			long t = System.nanoTime();
-			findDir(dir);
+			for (File dir : dirs) {
+				findDir(dir);
+			}
 			Collections.sort(results);
 			scan();
 			long tns = System.nanoTime() - t;
 			long ts = tns / 1000000000;
 			long mb = bytes / 1000000;
-			listener.searchComplete("Files: " + files + " Megabytes: " + mb + " Seconds: " + ts);
+			listener.searchComplete("Files: " + results.size() + " Megabytes: " + mb + " Seconds: " + ts);
 			
 		} catch (Exception e) {
 			e.printStackTrace();
