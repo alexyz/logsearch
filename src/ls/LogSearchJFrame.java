@@ -16,6 +16,7 @@ import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
 	
+	private static final String CASE_PREF = "case";
 	private static final String START_PREF = "start";
 	private static final String EDITOR_PREF = "editor";
 	private static final String AGE_PREF = "age";
@@ -53,6 +54,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JRadioButton startDateButton = new JRadioButton("Date");
 	private final JRadioButton ageButton = new JRadioButton("Age");
 	private final List<File> dirs = new ArrayList<>();
+	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
 	
 	private volatile SearchThread searchThread;
 	
@@ -90,6 +92,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		editorLabel.setText(editor != null ? editor.getName() : "no editor");
 		startDateButton.setSelected(prefs.getBoolean(START_PREF, true));
 		ageButton.setSelected(!startDateButton.isSelected());
+		ignoreCaseBox.setSelected(prefs.getBoolean(CASE_PREF, false));
 	}
 	
 	private void savePrefs () {
@@ -108,6 +111,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.put(EDITOR_PREF, editor != null ? editor.getAbsolutePath() : "");
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
 		prefs.putBoolean(START_PREF, startDateButton.isSelected());
+		prefs.putBoolean(CASE_PREF, ignoreCaseBox.isSelected());
 		try {
 			prefs.sync();
 		} catch (BackingStoreException e) {
@@ -119,7 +123,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private void initListeners () {
 		addWindowListener(new WindowAdapter() {
 			@Override
-			public void windowClosed (WindowEvent e) {
+			public void windowClosing (WindowEvent e) {
+				System.out.println("window closing");
 				savePrefs();
 			}
 		});
@@ -326,9 +331,11 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			return;
 		}
 		
+		final boolean ignoreCase = ignoreCaseBox.isSelected();
+		
 		savePrefs();
 		
-		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text);
+		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text, ignoreCase);
 		searchThread.start();
 	}
 	
@@ -363,10 +370,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		JPanel northPanel2 = new JPanel();
 		northPanel2.add(new JLabel("File Contains"));
 		northPanel2.add(searchField);
-		northPanel2.add(startDateButton);
-		northPanel2.add(startDateSpinner);
-		northPanel2.add(ageButton);
-		northPanel2.add(ageSpinner);
+		northPanel2.add(ignoreCaseBox);
+		
+		JPanel northPanel4 = new JPanel();
+		northPanel4.add(startDateButton);
+		northPanel4.add(startDateSpinner);
+		northPanel4.add(ageButton);
+		northPanel4.add(ageSpinner);
 		
 		JPanel northPanel3 = new JPanel();
 		northPanel3.add(startButton);
@@ -381,8 +391,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		southPanel.add(editorButton);
 		southPanel.add(openButton);
 		
-		JPanel northPanel = new JPanel(new GridLayout(3, 1));
+		JPanel northPanel = new JPanel(new GridLayout(4, 1));
 		northPanel.add(northPanel1);
+		northPanel.add(northPanel4);
 		northPanel.add(northPanel2);
 		northPanel.add(northPanel3);
 		

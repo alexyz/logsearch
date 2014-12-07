@@ -19,19 +19,21 @@ public class SearchThread extends Thread {
 	private final Date endDate;
 	private final String nameLower;
 	private final String text;
+	private final boolean ignoreCase;
 	
 	private long bytes;
 
-	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text) {
+	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase) {
 		super("SearchThread");
-		setPriority(Thread.MIN_PRIORITY);
-		setDaemon(true);
+		this.ignoreCase = ignoreCase;
 		this.endDate = endDate;
 		this.listener = listener;
 		this.dirs = dirs;
 		this.startDate = startDate;
 		this.nameLower = name.toLowerCase();
-		this.text = text;
+		this.text = ignoreCase ? text.toUpperCase() : text;
+		setPriority(Thread.MIN_PRIORITY);
+		setDaemon(true);
 	}
 	
 	@Override
@@ -42,7 +44,9 @@ public class SearchThread extends Thread {
 			listener.searchUpdate("finding");
 			long t = System.nanoTime();
 			for (File dir : dirs) {
-				findDir(dir);
+				if (running) {
+					findDir(dir);
+				}
 			}
 			Collections.sort(results);
 			scan();
@@ -73,25 +77,23 @@ public class SearchThread extends Thread {
 	
 	private void findDir (File dir) {
 		for (File file : dir.listFiles()) {
-			if (!running) {
-				break;
-			}
-			
-			try {
-				if (file.isFile()) {
-					if (file.getName().toLowerCase().endsWith(".zip")) {
-						findZip(file);
+			if (running) {
+				try {
+					if (file.isFile()) {
+						if (file.getName().toLowerCase().endsWith(".zip")) {
+							findZip(file);
+							
+						} else {
+							findFile(file);
+						}
 						
-					} else {
-						findFile(file);
+					} else if (file.isDirectory()) {
+						findDir(file);
 					}
 					
-				} else if (file.isDirectory()) {
-					findDir(file);
+				} catch (Exception e) {
+					e.printStackTrace();
 				}
-				
-			} catch (Exception e) {
-				e.printStackTrace();
 			}
 		}
 	}
@@ -112,11 +114,7 @@ public class SearchThread extends Thread {
 		boolean hasResult = false;
 		
 		Enumeration<ZipArchiveEntry> e = zf.getEntries();
-		while (e.hasMoreElements()) {
-			if (!running) {
-				break;
-			}
-			
+		while (running && e.hasMoreElements()) {
 			ZipArchiveEntry ze = e.nextElement();
 			String name = ze.getName();
 			if (name.contains("/")) {
@@ -143,13 +141,13 @@ public class SearchThread extends Thread {
 	private void scan () {
 		System.out.println("scan");
 		
-		for (int n = 0; n < results.size(); n++) {
+		for (int n = 0; running && n < results.size(); n++) {
 			listener.searchUpdate("scanning " + (n + 1) + " of " + results.size());
 			Result result = results.get(n);
 			
 			try {
 				// only scan if required
-				if (text != null && text.length() > 0) {
+				if (text.length() > 0) {
 					if (result.entry != null) {
 						ZipFile zf = zipFiles.get(result.file);
 						try (InputStream is = zf.getInputStream(zf.getEntry(result.entry))) {
@@ -186,19 +184,20 @@ public class SearchThread extends Thread {
 	private void scanInputStream2 (final List<Line> lines, final InputStream is) throws Exception {
 		try (CountingInputStream cis = new CountingInputStream(is)) {
 			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis))) {
-				int number = 0;
+				int lineno = 0;
 				String line;
-				while ((line = br.readLine()) != null) {
-					if (!running) {
-						break;
+				while (running && (line = br.readLine()) != null) {
+					lineno++;
+					String line2 = line;
+					if (ignoreCase) {
+						line2 = line2.toUpperCase();
 					}
-					number++;
-					if (line.contains(text)) {
+					if (line2.contains(text)) {
 						System.out.println("matched line " + line);
 						if (line.length() > 1000) {
 							line = line.substring(0, 1000);
 						}
-						lines.add(new Line(line, number));
+						lines.add(new Line(line, lineno));
 						if (lines.size() > 100) {
 							break;
 						}
