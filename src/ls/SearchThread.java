@@ -1,6 +1,7 @@
 package ls;
 
 import java.io.*;
+import java.nio.charset.Charset;
 import java.util.*;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
@@ -20,16 +21,20 @@ public class SearchThread extends Thread {
 	private final String nameLower;
 	private final String text;
 	private final boolean ignoreCase;
+	private final Charset charset;
+	private final int context;
 	
 	private long bytes;
 
-	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase) {
+	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase, Charset charset, int context) {
 		super("SearchThread");
 		this.ignoreCase = ignoreCase;
 		this.endDate = endDate;
 		this.listener = listener;
 		this.dirs = dirs;
 		this.startDate = startDate;
+		this.charset = charset;
+		this.context = context;
 		this.nameLower = name.toLowerCase();
 		this.text = ignoreCase ? text.toUpperCase() : text;
 		setPriority(Thread.MIN_PRIORITY);
@@ -167,7 +172,7 @@ public class SearchThread extends Thread {
 				e.printStackTrace();
 			}
 			
-			LogSearchUtil.sleep();
+			sleep();
 		}
 	}
 	
@@ -181,9 +186,10 @@ public class SearchThread extends Thread {
 		System.gc();
 	}
 	
+	// FIXME include context, use map instead of line object
 	private void scanInputStream2 (final List<Line> lines, final InputStream is) throws Exception {
 		try (CountingInputStream cis = new CountingInputStream(is)) {
-			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis))) {
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, this.charset))) {
 				int lineno = 0;
 				String line;
 				while (running && (line = br.readLine()) != null) {
@@ -208,4 +214,14 @@ public class SearchThread extends Thread {
 		}
 	}
 	
+	private void sleep () {
+		String s = System.getProperty("ls.slow");
+		if (s != null && s.length() > 0) {
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+	}
 }
