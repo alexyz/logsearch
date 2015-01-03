@@ -123,17 +123,6 @@ public class LogSearchUtil {
 		return date;
 	}
 	
-	public static void sleep() {
-		String s = System.getProperty("ls.slow");
-		if (s != null && s.length() > 0) {
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
-	}
-	
 	private LogSearchUtil () {
 		//
 	}

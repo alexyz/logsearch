@@ -2,9 +2,9 @@ package ls;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
+import java.nio.charset.Charset;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -16,6 +16,8 @@ import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
 	
+	private static final String CONTEXT_PREF = "context";
+	private static final String CHARSET_PREF = "charset";
 	private static final String CASE_PREF = "case";
 	private static final String START_PREF = "start";
 	private static final String EDITOR_PREF = "editor";
@@ -55,6 +57,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JRadioButton ageButton = new JRadioButton("Age");
 	private final List<File> dirs = new ArrayList<>();
 	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
+	private final JTextField charsetField = new JTextField();
+	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
 	
 	private volatile SearchThread searchThread;
 	
@@ -63,11 +67,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	public LogSearchJFrame () {
 		super(TITLE);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
+		setPreferredSize(new Dimension(800, 600));
 		initComponents();
 		initListeners();
 		loadPrefs();
-		setPreferredSize(new Dimension(800, 600));
-		pack();
 	}
 	
 	private void loadPrefs () {
@@ -93,6 +96,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		startDateButton.setSelected(prefs.getBoolean(START_PREF, true));
 		ageButton.setSelected(!startDateButton.isSelected());
 		ignoreCaseBox.setSelected(prefs.getBoolean(CASE_PREF, false));
+		charsetField.setText(prefs.get(CHARSET_PREF, "UTF-8"));
+		contextSpinner.setValue(prefs.getInt(CONTEXT_PREF, 3));
 	}
 	
 	private void savePrefs () {
@@ -112,6 +117,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
 		prefs.putBoolean(START_PREF, startDateButton.isSelected());
 		prefs.putBoolean(CASE_PREF, ignoreCaseBox.isSelected());
+		prefs.put(CHARSET_PREF, charsetField.getText());
+		prefs.putInt(CONTEXT_PREF, (int) contextSpinner.getValue());
 		try {
 			prefs.sync();
 		} catch (BackingStoreException e) {
@@ -333,21 +340,20 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		final boolean ignoreCase = ignoreCaseBox.isSelected();
 		
+		Charset cs = Charset.forName(charsetField.getText());
+		
+		int context = (int) contextSpinner.getValue();
+		
 		savePrefs();
 		
-		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text, ignoreCase);
+		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text, ignoreCase, cs, context);
 		searchThread.start();
 	}
 	
 	private void initComponents () {
 		nameField.setColumns(15);
 		searchField.setColumns(15);
-		
-		JPanel northPanel1 = new JPanel();
-		northPanel1.add(dirLabel);
-		northPanel1.add(dirButton);
-		northPanel1.add(new JLabel("Name Contains"));
-		northPanel1.add(nameField);
+		charsetField.setColumns(10);
 		
 		{
 			Calendar cal = new GregorianCalendar();
@@ -367,21 +373,25 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		bg.add(startDateButton);
 		bg.add(ageButton);
 		
-		JPanel northPanel2 = new JPanel();
-		northPanel2.add(new JLabel("File Contains"));
-		northPanel2.add(searchField);
-		northPanel2.add(ignoreCaseBox);
-		
-		JPanel northPanel4 = new JPanel();
-		northPanel4.add(startDateButton);
-		northPanel4.add(startDateSpinner);
-		northPanel4.add(ageButton);
-		northPanel4.add(ageSpinner);
-		
-		JPanel northPanel3 = new JPanel();
-		northPanel3.add(startButton);
-		northPanel3.add(stopButton);
-		northPanel3.add(showAllButton);
+		JPanel northPanel = new JPanel(new FlowLayout2());
+		northPanel.add(dirLabel);
+		northPanel.add(dirButton);
+		northPanel.add(new JLabel("Name Contains"));
+		northPanel.add(nameField);
+		northPanel.add(new JLabel("File Contains"));
+		northPanel.add(searchField);
+		northPanel.add(ignoreCaseBox);
+		northPanel.add(new JLabel("Charset"));
+		northPanel.add(charsetField);
+		northPanel.add(startDateButton);
+		northPanel.add(startDateSpinner);
+		northPanel.add(ageButton);
+		northPanel.add(ageSpinner);
+		northPanel.add(new JLabel("Context"));
+		northPanel.add(contextSpinner);
+		northPanel.add(startButton);
+		northPanel.add(stopButton);
+		northPanel.add(showAllButton);
 		
 		JScrollPane tableScroller = new JScrollPane(table);
 		
@@ -391,18 +401,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		southPanel.add(editorButton);
 		southPanel.add(openButton);
 		
-		JPanel northPanel = new JPanel(new GridLayout(4, 1));
-		northPanel.add(northPanel1);
-		northPanel.add(northPanel4);
-		northPanel.add(northPanel2);
-		northPanel.add(northPanel3);
-		
 		JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(northPanel, BorderLayout.NORTH);
 		contentPanel.add(tableScroller, BorderLayout.CENTER);
 		contentPanel.add(southPanel, BorderLayout.SOUTH);
 
 		setContentPane(contentPanel);
+		pack();
 	}
 
 	@Override
