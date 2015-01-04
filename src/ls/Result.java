@@ -22,7 +22,7 @@ public class Result implements Comparable<Result> {
 	public int compareTo (Result o) {
 		int c = date.compareTo(o.date);
 		if (c == 0) {
-			return name.compareToIgnoreCase(o.name);
+			c = name.compareToIgnoreCase(o.name);
 		}
 		return -c;
 	}

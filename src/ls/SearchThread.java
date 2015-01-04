@@ -25,10 +25,11 @@ public class SearchThread extends Thread {
 	private final boolean ignoreCase;
 	private final Charset charset;
 	private final int contextLines;
+	private final FileDater dateParser;
 	
 	private long bytes;
 
-	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase, Charset charset, int contextLines) {
+	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase, Charset charset, int contextLines, FileDater dateParser) {
 		super("SearchThread");
 		this.ignoreCase = ignoreCase;
 		this.endDate = endDate;
@@ -37,6 +38,7 @@ public class SearchThread extends Thread {
 		this.startDate = startDate;
 		this.charset = charset;
 		this.contextLines = contextLines;
+		this.dateParser = dateParser;
 		this.nameLower = name.toLowerCase();
 		this.text = ignoreCase ? text.toUpperCase() : text;
 		setPriority(Thread.MIN_PRIORITY);
@@ -58,8 +60,8 @@ public class SearchThread extends Thread {
 			Collections.sort(results);
 			scan();
 			long tns = System.nanoTime() - t;
-			long ts = tns / 1000000000;
-			long mb = bytes / 1000000;
+			long ts = tns / 1_000_000_000;
+			long mb = bytes / 1_000_000;
 			listener.searchComplete("Files: " + results.size() + " Megabytes: " + mb + " Seconds: " + ts);
 			
 		} catch (Exception e) {
@@ -107,7 +109,7 @@ public class SearchThread extends Thread {
 
 	private void findFile (File file) {
 		if (testName(file.getName())) {
-			Date date = LogSearchUtil.getFileDate(file.getName(), file.lastModified());
+			Date date = dateParser.getFileDate(file.lastModified(), file.getName());
 			if (testDate(date)) {
 				results.add(new Result(file, date, null));
 			}
@@ -129,7 +131,7 @@ public class SearchThread extends Thread {
 			}
 			
 			if (testName(name)) {
-				Date date = LogSearchUtil.getFileDate(name, ze.getTime());
+				Date date = dateParser.getFileDate(ze.getTime(), name);
 				if (testDate(date)) {
 					results.add(new Result(file, date, ze.getName()));
 					hasResult = true;
@@ -211,7 +213,6 @@ public class SearchThread extends Thread {
 					}
 					
 					if (lineUpper.contains(text)) {
-						System.out.println("matched line " + line);
 						matches++;
 						
 						for (int n = 0; n < backward.size(); n++) {
