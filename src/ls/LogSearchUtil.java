@@ -1,11 +1,7 @@
 package ls;
 
 import java.io.*;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Map;
-import java.util.regex.*;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
@@ -102,27 +98,6 @@ public class LogSearchUtil {
 		return f;
 	}
 
-	public static Date getFileDate (String fileName, long fileTime) {
-		Pattern datePat = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})");
-		Date date = null;
-		if (fileName.length() > 0) {
-			Matcher mat = datePat.matcher(fileName);
-			if (mat.find()) {
-				String dateStr = mat.group(1);
-				DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-				try {
-					date = df.parse(dateStr);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-		}
-		if (date == null && fileTime > 0) {
-			date = new Date(fileTime);
-		}
-		return date;
-	}
-	
 	private LogSearchUtil () {
 		//
 	}
