@@ -16,6 +16,9 @@ public class FlowLayout2 extends FlowLayout {
 			x = Math.max(x, c.getX() + c.getWidth());
 			y = Math.max(y, c.getY() + c.getHeight());
 		}
+		Insets i = target.getInsets();
+		x = x + i.bottom + getVgap();
+		y = y + i.right + getHgap();
 		System.out.println("max " + x + "," + y);
 		return new Dimension(x, y);
 	}

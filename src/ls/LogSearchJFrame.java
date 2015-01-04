@@ -258,9 +258,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			Result result = tableModel.getResult(row);
 			if (result.lines.size() > 0) {
 				StringBuffer sb = new StringBuffer();
-				for (Line line : result.lines) {
-					sb.append("Line " + line.number + "\n");
-					sb.append(line.line + "\n");
+				for (Map.Entry<Integer,String> e : result.lines.entrySet()) {
+					sb.append("[Line ").append(e.getKey()).append("] ").append(e.getValue()).append("\n");
 				}
 				TextJDialog d = new TextJDialog(this, "Preview", sb.toString());
 				d.setVisible(true);

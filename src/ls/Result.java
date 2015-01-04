@@ -4,11 +4,12 @@ import java.io.File;
 import java.util.*;
 
 public class Result implements Comparable<Result> {
-	public final List<Line> lines = new ArrayList<>(0);
+	public final Map<Integer,String> lines = new TreeMap<>();
 	public final String name;
 	public final Date date;
 	public final File file;
 	public final String entry;
+	public int matches;
 	
 	public Result (File file, Date date, String entry) {
 		this.name = file.getName() + (entry != null ? ":" + entry : "");
