@@ -10,6 +10,8 @@ import org.apache.commons.io.input.CountingInputStream;
 
 public class SearchThread extends Thread {
 
+	private static final int MAX_MATCHES = 1000;
+
 	public volatile boolean running;
 	
 	private final List<Result> results = new ArrayList<>();
@@ -22,11 +24,11 @@ public class SearchThread extends Thread {
 	private final String text;
 	private final boolean ignoreCase;
 	private final Charset charset;
-	private final int context;
+	private final int contextLines;
 	
 	private long bytes;
 
-	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase, Charset charset, int context) {
+	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase, Charset charset, int contextLines) {
 		super("SearchThread");
 		this.ignoreCase = ignoreCase;
 		this.endDate = endDate;
@@ -34,7 +36,7 @@ public class SearchThread extends Thread {
 		this.dirs = dirs;
 		this.startDate = startDate;
 		this.charset = charset;
-		this.context = context;
+		this.contextLines = contextLines;
 		this.nameLower = name.toLowerCase();
 		this.text = ignoreCase ? text.toUpperCase() : text;
 		setPriority(Thread.MIN_PRIORITY);
@@ -156,12 +158,12 @@ public class SearchThread extends Thread {
 					if (result.entry != null) {
 						ZipFile zf = zipFiles.get(result.file);
 						try (InputStream is = zf.getInputStream(zf.getEntry(result.entry))) {
-							scanInputStream(result.lines, result.entry, is);
+							result.matches = scanInputStream(result.lines, result.entry, is);
 						}
 						
 					} else {
 						try (InputStream is = new FileInputStream(result.file)) {
-							scanInputStream(result.lines, result.file.getName(), is);
+							result.matches = scanInputStream(result.lines, result.file.getName(), is);
 						}
 					}
 				}
@@ -176,42 +178,67 @@ public class SearchThread extends Thread {
 		}
 	}
 	
-	private void scanInputStream (final List<Line> lines, String name, InputStream is) throws Exception {
+	private int scanInputStream (final Map<Integer,String> lines, String name, InputStream is) throws Exception {
 		System.out.println("scan " + name);
 		
 		try (InputStream is2 = LogSearchUtil.optionallyDecompress(name, new BufferedInputStream(is))) {
-			scanInputStream2(lines, is2);
-		}
+			return scanInputStream2(lines, is2);
 			
-		System.gc();
+		} finally {
+			System.gc();
+		}
 	}
 	
-	// FIXME include context, use map instead of line object
-	private void scanInputStream2 (final List<Line> lines, final InputStream is) throws Exception {
+	private int scanInputStream2 (final Map<Integer,String> lines, final InputStream is) throws Exception {
+		final List<String> backward = new ArrayList<>();
+		int forward = 0;
+		int matches = 0;
+		
 		try (CountingInputStream cis = new CountingInputStream(is)) {
 			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, this.charset))) {
-				int lineno = 0;
+				int lineno = 1;
 				String line;
+				
 				while (running && (line = br.readLine()) != null) {
-					lineno++;
-					String line2 = line;
+					if (forward > 0) {
+						lines.put(lineno, line);
+						forward--;
+					}
+					
+					String lineUpper = line;
 					if (ignoreCase) {
-						line2 = line2.toUpperCase();
+						lineUpper = lineUpper.toUpperCase();
 					}
-					if (line2.contains(text)) {
+					
+					if (lineUpper.contains(text)) {
 						System.out.println("matched line " + line);
-						if (line.length() > 1000) {
-							line = line.substring(0, 1000);
+						matches++;
+						
+						for (int n = 0; n < backward.size(); n++) {
+							// backward = [l-3] [l-2] [l-1]
+							lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
 						}
-						lines.add(new Line(line, lineno));
-						if (lines.size() > 100) {
-							break;
-						}
+						lines.put(lineno, line);
+						forward = contextLines;
 					}
+					
+					if (backward.size() >= contextLines) {
+						backward.remove(0);
+					}
+					backward.add(line);
+					
+					if (matches >= MAX_MATCHES) {
+						System.out.println("too many matches");
+						break;
+					}
+					
+					lineno++;
 				}
 			}
 			bytes += cis.getByteCount();
 		}
+		
+		return matches;
 	}
 	
 	private void sleep () {

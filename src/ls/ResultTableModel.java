@@ -70,22 +70,23 @@ public class ResultTableModel extends AbstractTableModel {
 	
 	@Override
 	public Object getValueAt (int row, int col) {
-		Result fd = getResults().get(row);
+		Result r = getResults().get(row);
 		switch (col) {
 			case 0:
-				return DateFormat.getDateTimeInstance().format(fd.date);
+				return DateFormat.getDateTimeInstance().format(r.date);
 			case 1:
-				return fd.name;
+				return r.name;
 			case 2:
-				return fd.lines.size() != 0 ? fd.lines.size() : "";
+				return r.matches != 0 ? r.matches : "";
+			default:
+				return null;
 		}
-		return null;
 	}
-
+	
 	public boolean isShowAll () {
 		return showAll;
 	}
-
+	
 	public void setShowAll (boolean showAll) {
 		this.showAll = showAll;
 		fireTableDataChanged();
