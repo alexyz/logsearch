@@ -1,7 +1,10 @@
 package ls;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.event.*;
 import java.io.*;
 import java.nio.charset.Charset;
@@ -16,17 +19,19 @@ import javax.swing.filechooser.FileFilter;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
 	
+	private static final String STARTDATE_PREF = "startdate";
 	private static final String DATEFORMAT_PREF = "dateformat";
 	private static final String PARSEDATE_PREF = "parsedate";
 	private static final String CONTEXT_PREF = "context";
 	private static final String CHARSET_PREF = "charset";
 	private static final String CASE_PREF = "case";
-	private static final String START_PREF = "start";
+	private static final String START_OR_AGE_PREF = "start";
 	private static final String EDITOR_PREF = "editor";
 	private static final String AGE_PREF = "age";
 	private static final String SEARCH_PREF = "search";
 	private static final String NAME_PREF = "name";
 	private static final String DIR_PREF = "dir";
+	private static final String DIS_DIR_PREF = "disdir";
 	private static final String TITLE = "LogSearch";
 	
 	public static void main (String[] args) {
@@ -37,6 +42,37 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			e.printStackTrace();
 		}
 		instance.setVisible(true);
+	}
+
+	private static void stringToDirs (List<File> dirs, String dirStr) {
+		StringTokenizer t = new StringTokenizer(dirStr, File.pathSeparator);
+		while (t.hasMoreTokens()) {
+			File d = new File(t.nextToken());
+			if (d.isDirectory()) {
+				dirs.add(d);
+			}
+		}
+	}
+
+	private static String dirsToString (List<File> dirs) {
+		StringBuilder dirSb = new StringBuilder();
+		for (File dir : dirs) {
+			if (dirSb.length() > 0) {
+				dirSb.append(File.pathSeparator);
+			}
+			dirSb.append(dir.getAbsolutePath());
+		}
+		return dirSb.toString();
+	}
+	
+	private static JPanel panel(JComponent... comps) {
+		FlowLayout fl = new FlowLayout();
+		fl.setVgap(0);
+		JPanel p = new JPanel(fl);
+		for (JComponent c : comps) {
+			p.add(c);
+		}
+		return p;
 	}
 	
 	private final JLabel dirLabel = new JLabel();
@@ -49,15 +85,16 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JButton stopButton = new JButton("Stop");
 	private final JButton openButton = new JButton("Open");
 	private final ResultTableModel tableModel = new ResultTableModel();
-	private final JTable table = new JTable(tableModel);
+	private final JTable table = new ResultsJTable(tableModel);
 	private final JButton editorButton = new JButton("Editor...");
 	private final JLabel editorLabel = new JLabel();
 	private final JButton previewButton = new JButton("Preview");
-	private final JToggleButton showAllButton = new JToggleButton("Show All");
+	private final JToggleButton showAllButton = new JToggleButton("Show Unmatched");
 	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
 	private final JRadioButton startDateButton = new JRadioButton("Oldest Date");
 	private final JRadioButton ageButton = new JRadioButton("Max Age");
 	private final List<File> dirs = new ArrayList<>();
+	private final List<File> disDirs = new ArrayList<>();
 	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
 	private final JTextField charsetField = new JTextField();
 	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
@@ -79,15 +116,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private void loadPrefs () {
 		System.out.println("load prefs");
-		String dirStr = prefs.get(DIR_PREF, System.getProperty("user.dir"));
-		System.out.println("loaded dir pref: " + dirStr);
-		StringTokenizer t = new StringTokenizer(dirStr, File.pathSeparator);
-		while (t.hasMoreTokens()) {
-			File d = new File(t.nextToken());
-			if (d.isDirectory()) {
-				dirs.add(d);
-			}
-		}
+		stringToDirs(dirs, prefs.get(DIR_PREF, System.getProperty("user.dir")));
+		stringToDirs(dirs, prefs.get(DIS_DIR_PREF, ""));
 		dirLabel.setText(String.valueOf(dirs.size()));
 		nameField.setText(prefs.get(NAME_PREF, "server.log"));
 		searchField.setText(prefs.get(SEARCH_PREF, "a"));
@@ -97,36 +127,34 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			editor = null;
 		}
 		editorLabel.setText(editor != null ? editor.getName() : "no editor");
-		startDateButton.setSelected(prefs.getBoolean(START_PREF, true));
+		startDateButton.setSelected(prefs.getBoolean(START_OR_AGE_PREF, true));
 		ageButton.setSelected(!startDateButton.isSelected());
 		ignoreCaseBox.setSelected(prefs.getBoolean(CASE_PREF, false));
 		charsetField.setText(prefs.get(CHARSET_PREF, "UTF-8"));
 		contextSpinner.setValue(prefs.getInt(CONTEXT_PREF, 2));
 		parseDateBox.setSelected(prefs.getBoolean(PARSEDATE_PREF, true));
 		dateFormatField.setText(prefs.get(DATEFORMAT_PREF, "yyyy-MM-dd"));
+		Calendar cal = Calendar.getInstance();
+		cal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
+		cal.add(Calendar.DATE, -7);
+		startDateSpinner.setValue(new Date(prefs.getLong(STARTDATE_PREF, cal.getTimeInMillis())));
 	}
-	
+
 	private void savePrefs () {
 		System.out.println("save prefs");
-		StringBuilder dirSb = new StringBuilder();
-		for (File dir : dirs) {
-			if (dirSb.length() > 0) {
-				dirSb.append(File.pathSeparator);
-			}
-			dirSb.append(dir.getAbsolutePath());
-		}
-		System.out.println("save dir pref: " + dirSb);
-		prefs.put(DIR_PREF, dirSb.toString());
+		prefs.put(DIR_PREF, dirsToString(dirs));
+		prefs.put(DIS_DIR_PREF, dirsToString(disDirs));
 		prefs.put(NAME_PREF, nameField.getText());
 		prefs.put(SEARCH_PREF, searchField.getText());
 		prefs.put(EDITOR_PREF, editor != null ? editor.getAbsolutePath() : "");
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
-		prefs.putBoolean(START_PREF, startDateButton.isSelected());
+		prefs.putBoolean(START_OR_AGE_PREF, startDateButton.isSelected());
 		prefs.putBoolean(CASE_PREF, ignoreCaseBox.isSelected());
 		prefs.put(CHARSET_PREF, charsetField.getText());
 		prefs.putInt(CONTEXT_PREF, (int) contextSpinner.getValue());
 		prefs.putBoolean(PARSEDATE_PREF, parseDateBox.isSelected());
 		prefs.put(DATEFORMAT_PREF, dateFormatField.getText());
+		prefs.putLong(STARTDATE_PREF, ((Date)startDateSpinner.getValue()).getTime());
 		try {
 			prefs.sync();
 		} catch (BackingStoreException e) {
@@ -147,12 +175,16 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		dirButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				DirectoryJDialog d = new DirectoryJDialog(LogSearchJFrame.this, "Log Directories", dirs);
+				DirectoryJDialog d = new DirectoryJDialog(LogSearchJFrame.this, "Log Directories");
+				d.addDirs(dirs, true);
+				d.addDirs(disDirs, false);
 				d.setVisible(true);
 				if (d.isOk()) {
 					dirs.clear();
-					dirs.addAll(d.getDirs());
+					dirs.addAll(d.getDirs(true));
 					dirLabel.setText(String.valueOf(dirs.size()));
+					disDirs.clear();
+					disDirs.addAll(d.getDirs(false));
 				}
 			}
 		});
@@ -279,9 +311,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			if (result.lines.size() > 0) {
 				StringBuffer sb = new StringBuffer();
 				for (Map.Entry<Integer,String> e : result.lines.entrySet()) {
-					sb.append("[Line ").append(e.getKey()).append("] ").append(e.getValue()).append("\n");
+					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
 				}
-				TextJDialog d = new TextJDialog(this, "Preview", sb.toString());
+				TextJDialog d = new TextJDialog(this, "Preview");
+				d.setTextFont(new Font("monospaced", 0, 12));
+				d.setText(sb.toString());
+				d.setHighlight(searchField.getText(), Color.orange);
 				d.setVisible(true);
 			}
 		}
@@ -383,8 +418,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			GregorianCalendar startCal = new GregorianCalendar(y, m, d);
 			startCal.add(Calendar.DATE, -7);
 			Date dstart = startCal.getTime();
-			Date dmax = new GregorianCalendar(y + 1, m, d).getTime();
-			Date dmin = new GregorianCalendar(y - 1, m, d).getTime();
+			Date dmax = new GregorianCalendar(y + 10, m, d).getTime();
+			Date dmin = new GregorianCalendar(y - 10, m, d).getTime();
 			startDateSpinner.setModel(new SpinnerDateModel(dstart, dmin, dmax, Calendar.DATE));
 			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, ((SimpleDateFormat)DateFormat.getDateInstance()).toPattern()));
 		}
@@ -394,33 +429,24 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		bg.add(ageButton);
 		
 		JPanel northPanel = new JPanel(new FlowLayout2());
-		northPanel.add(dirLabel);
-		northPanel.add(dirButton);
-		northPanel.add(new JLabel("Name Contains"));
-		northPanel.add(nameField);
-		northPanel.add(new JLabel("File Contains"));
-		northPanel.add(searchField);
+		northPanel.add(panel(dirLabel, dirButton));
+		northPanel.add(panel(new JLabel("Name Contains"), nameField));
+		northPanel.add(panel(new JLabel("File Contains"), searchField));
 		northPanel.add(ignoreCaseBox);
-		northPanel.add(parseDateBox);
-		northPanel.add(dateFormatField);
-		northPanel.add(startDateButton);
-		northPanel.add(startDateSpinner);
-		northPanel.add(ageButton);
-		northPanel.add(ageSpinner);
-		northPanel.add(new JLabel("Char Set"));
-		northPanel.add(charsetField);
-		northPanel.add(new JLabel("Context Lines"));
-		northPanel.add(contextSpinner);
+		northPanel.add(panel(parseDateBox, dateFormatField));
+		northPanel.add(panel(startDateButton, startDateSpinner));
+		northPanel.add(panel(ageButton, ageSpinner));
+		northPanel.add(panel(new JLabel("Char Set"), charsetField));
+		northPanel.add(panel(new JLabel("Context Lines"), contextSpinner));
 		northPanel.add(startButton);
 		northPanel.add(stopButton);
-		northPanel.add(showAllButton);
 		
 		JScrollPane tableScroller = new JScrollPane(table);
 		
 		JPanel southPanel = new JPanel();
+		southPanel.add(showAllButton);
 		southPanel.add(previewButton);
-		southPanel.add(editorLabel);
-		southPanel.add(editorButton);
+		southPanel.add(panel(editorLabel, editorButton));
 		southPanel.add(openButton);
 		
 		JPanel contentPanel = new JPanel(new BorderLayout());

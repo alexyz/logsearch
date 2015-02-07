@@ -68,6 +68,16 @@ public class ResultTableModel extends AbstractTableModel {
 		return null;
 	}
 	
+	public String getToolTipAt (int row, int col) {
+		Result r = getResults().get(row);
+		switch (col) {
+			case 1:
+				return r.file != null ? r.file.getAbsolutePath() : null;
+			default:
+				return null;
+		}
+	}
+	
 	@Override
 	public Object getValueAt (int row, int col) {
 		Result r = getResults().get(row);

@@ -60,9 +60,9 @@ public class SearchThread extends Thread {
 			Collections.sort(results);
 			scan();
 			long tns = System.nanoTime() - t;
-			long ts = tns / 1_000_000_000;
-			long mb = bytes / 1_000_000;
-			listener.searchComplete("Files: " + results.size() + " Megabytes: " + mb + " Seconds: " + ts);
+			double ts = tns / 1_000_000_000.0;
+			double mb = bytes / 1_000_000.0;
+			listener.searchComplete(String.format("Files: %d  Megabytes: %.1f  Seconds: %.1f  MB/s: %.1f", results.size(), mb, ts, (mb/ts)));
 			
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -223,7 +223,7 @@ public class SearchThread extends Thread {
 						forward = contextLines;
 					}
 					
-					if (backward.size() >= contextLines) {
+					if (backward.size() > 0 && backward.size() >= contextLines) {
 						backward.remove(0);
 					}
 					backward.add(line);

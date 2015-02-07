@@ -17,30 +17,35 @@ public class DirectoryJDialog extends JDialog {
 	public static void main (String[] args) {
 		File ud = new File(System.getProperty("user.dir"));
 		File uh = new File(System.getProperty("user.home"));
-		DirectoryJDialog d = new DirectoryJDialog(null, "Title", Arrays.asList(ud, uh));
+		DirectoryJDialog d = new DirectoryJDialog(null, "Title");
+		d.addDirs(Arrays.asList(ud, uh), true);
 		d.setVisible(true);
 		System.exit(0);
 	}
 	
-	private final DefaultListModel<File> model = new DefaultListModel<>();
-	private final JList<File> list = new JList<>(model);
 	private final JButton addButton = new JButton("Add");
 	private final JButton editButton = new JButton("Edit");
 	private final JButton removeButton = new JButton("Remove");
 	private final JButton okButton = new JButton("OK");
 	private final JButton cancelButton = new JButton("Cancel");
+	private final JTable dirTable = new JTable(new DirectoryTableModel());
+	
 	private boolean ok;
 	
-	public DirectoryJDialog (Frame frame, String title, List<File> dirs) {
+	public DirectoryJDialog (Frame frame, String title) {
 		super(frame, title);
-		for (File d : dirs) {
-			model.addElement(d.getAbsoluteFile());
-		}
 		setContentPane(init());
 		setModal(true);
 		setPreferredSize(new Dimension(480, 320));
 		pack();
 		setLocationRelativeTo(frame);
+	}
+
+	public void addDirs (Collection<File> dirs, boolean en) {
+		final DirectoryTableModel m = (DirectoryTableModel)dirTable.getModel();
+		for (File d : dirs) {
+			m.add(d.getAbsoluteFile(), en);
+		}
 	}
 
 	private JPanel init () {
@@ -51,8 +56,9 @@ public class DirectoryJDialog extends JDialog {
 				fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 				int opt = fc.showOpenDialog(DirectoryJDialog.this);
 				if (opt == JFileChooser.APPROVE_OPTION) {
-					model.addElement(fc.getSelectedFile().getAbsoluteFile());
-					list.setSelectedIndex(model.getSize() - 1);
+					final DirectoryTableModel m = (DirectoryTableModel)dirTable.getModel();
+					m.add(fc.getSelectedFile().getAbsoluteFile(), true);
+					dirTable.getSelectionModel().setSelectionInterval(m.getRowCount(), m.getRowCount());
 				}
 			}
 		});
@@ -60,13 +66,13 @@ public class DirectoryJDialog extends JDialog {
 		editButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				int i = list.getSelectedIndex();
+				int i = dirTable.getSelectedRow();
 				if (i >= 0) {
-					JFileChooser fc = new JFileChooser(model.get(i));
+					JFileChooser fc = new JFileChooser(((DirectoryTableModel)dirTable.getModel()).getDir(i));
 					fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 					int opt = fc.showOpenDialog(DirectoryJDialog.this);
 					if (opt == JFileChooser.APPROVE_OPTION) {
-						model.set(i, fc.getSelectedFile().getAbsoluteFile());
+						((DirectoryTableModel)dirTable.getModel()).update(i, fc.getSelectedFile().getAbsoluteFile());
 						repaint();
 					}
 				}
@@ -76,9 +82,9 @@ public class DirectoryJDialog extends JDialog {
 		removeButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				int i = list.getSelectedIndex();
+				int i = dirTable.getSelectedRow();
 				if (i >= 0) {
-					model.remove(i);
+					((DirectoryTableModel)dirTable.getModel()).remove(i);
 				}
 			}
 		});
@@ -98,7 +104,9 @@ public class DirectoryJDialog extends JDialog {
 			}
 		});
 		
-		JScrollPane scoller = new JScrollPane(list);
+		dirTable.getColumnModel().getColumn(0).setMaxWidth(100);
+		
+		JScrollPane scoller = new JScrollPane(dirTable);
 		scoller.setBorder(new TitledBorder("Directories"));
 		
 		JPanel buttonPanel1 = new JPanel();
@@ -124,11 +132,7 @@ public class DirectoryJDialog extends JDialog {
 		return ok;
 	}
 	
-	public Set<File> getDirs() {
-		Set<File> l = new TreeSet<>();
-		for (int n = 0; n < model.getSize(); n++) {
-			l.add(model.get(n));
-		}
-		return l;
+	public Set<File> getDirs(boolean enabled) {
+		return ((DirectoryTableModel)dirTable.getModel()).getDirs(enabled);
 	}
 }
