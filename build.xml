@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project default="jar" xmlns:ivy="antlib:org.apache.ivy.ant">
 
-	<target name="libs">
-		<ivy:configure />
-		<ivy:resolve />
-		<ivy:retrieve type="jar" sync="true"/>
-	</target>
+	<ivy:configure />
+	<ivy:resolve />
+	<ivy:retrieve type="jar" sync="true" />
 
-	<target name="jar" depends="libs">
+	<target name="jar">
 		<jar destfile="dist/logsearch.jar">
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
