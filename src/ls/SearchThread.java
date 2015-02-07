@@ -53,9 +53,10 @@ public class SearchThread extends Thread {
 			listener.searchUpdate("finding");
 			long t = System.nanoTime();
 			for (File dir : dirs) {
-				if (running) {
-					findDir(dir);
+				if (!running) {
+					break;
 				}
+				findDir(dir);
 			}
 			Collections.sort(results);
 			scan();
@@ -86,23 +87,24 @@ public class SearchThread extends Thread {
 	
 	private void findDir (File dir) {
 		for (File file : dir.listFiles()) {
-			if (running) {
-				try {
-					if (file.isFile()) {
-						if (file.getName().toLowerCase().endsWith(".zip")) {
-							findZip(file);
-							
-						} else {
-							findFile(file);
-						}
+			if (!running) {
+				break;
+			}
+			try {
+				if (file.isFile()) {
+					if (file.getName().toLowerCase().endsWith(".zip")) {
+						findZip(file);
 						
-					} else if (file.isDirectory()) {
-						findDir(file);
+					} else {
+						findFile(file);
 					}
 					
-				} catch (Exception e) {
-					e.printStackTrace();
+				} else if (file.isDirectory()) {
+					findDir(file);
 				}
+				
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
 		}
 	}
