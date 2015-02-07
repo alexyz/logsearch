@@ -117,7 +117,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private void loadPrefs () {
 		System.out.println("load prefs");
 		stringToDirs(dirs, prefs.get(DIR_PREF, System.getProperty("user.dir")));
-		stringToDirs(dirs, prefs.get(DIS_DIR_PREF, ""));
+		stringToDirs(disDirs, prefs.get(DIS_DIR_PREF, ""));
 		dirLabel.setText(String.valueOf(dirs.size()));
 		nameField.setText(prefs.get(NAME_PREF, "server.log"));
 		searchField.setText(prefs.get(SEARCH_PREF, "a"));
