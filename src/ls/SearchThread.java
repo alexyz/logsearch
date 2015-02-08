@@ -11,6 +11,17 @@ import org.apache.commons.io.input.CountingInputStream;
 public class SearchThread extends Thread {
 
 	private static final int MAX_MATCHES = 1000;
+	
+	private static void sleep () {
+		String s = System.getProperty("ls.slow");
+		if (s != null && s.length() > 0) {
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+	}
 
 	public volatile boolean running;
 	
@@ -121,6 +132,7 @@ public class SearchThread extends Thread {
 	private void findZip (final File file) throws Exception {
 		System.out.println("find zip " + file);
 		
+		// don't close until scan finished
 		ZipFile zf = new ZipFile(file);
 		boolean hasResult = false;
 		
@@ -225,10 +237,12 @@ public class SearchThread extends Thread {
 						forward = contextLines;
 					}
 					
-					if (backward.size() > 0 && backward.size() >= contextLines) {
-						backward.remove(0);
+					if (contextLines > 0) {
+						if (backward.size() >= contextLines) {
+							backward.remove(0);
+						}
+						backward.add(line);
 					}
-					backward.add(line);
 					
 					if (matches >= MAX_MATCHES) {
 						System.out.println("too many matches");
@@ -244,14 +258,5 @@ public class SearchThread extends Thread {
 		return matches;
 	}
 	
-	private void sleep () {
-		String s = System.getProperty("ls.slow");
-		if (s != null && s.length() > 0) {
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
-	}
+	
 }
