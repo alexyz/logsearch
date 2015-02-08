@@ -441,6 +441,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		northPanel.add(startButton);
 		northPanel.add(stopButton);
 		
+		table.getColumnModel().getColumn(0).setPreferredWidth(200);
+		table.getColumnModel().getColumn(1).setPreferredWidth(500);
+		table.getColumnModel().getColumn(2).setPreferredWidth(100);
 		JScrollPane tableScroller = new JScrollPane(table);
 		
 		JPanel southPanel = new JPanel();

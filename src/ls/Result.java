@@ -12,10 +12,18 @@ public class Result implements Comparable<Result> {
 	public int matches;
 	
 	public Result (File file, Date date, String entry) {
-		this.name = file.getName() + (entry != null ? ":" + entry : "");
 		this.file = file;
 		this.date = date;
 		this.entry = entry;
+		if (entry != null) {
+			int i = entry.lastIndexOf("/");
+			if (i >= 0 && i < entry.length()) {
+				entry = entry.substring(i + 1);
+			}
+			this.name = entry;
+		} else {
+			this.name = file.getName();
+		}
 	}
 	
 	@Override

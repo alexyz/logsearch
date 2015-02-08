@@ -72,7 +72,7 @@ public class ResultTableModel extends AbstractTableModel {
 		Result r = getResults().get(row);
 		switch (col) {
 			case 1:
-				return r.file != null ? r.file.getAbsolutePath() : null;
+				return r.file.getAbsolutePath() + (r.entry != null ? ": " + r.entry : "");
 			default:
 				return null;
 		}
