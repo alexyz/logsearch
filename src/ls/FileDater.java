@@ -9,20 +9,17 @@ import java.util.regex.*;
 public class FileDater {
 	private final Pattern datePattern;
 	private final DateFormat dateFormat;
+	private final DateFormat dateFormatHour;
 	
-	public FileDater (boolean parseDate, String dateFormatStr) {
+	public FileDater (boolean parseDate) {
 		if (parseDate) {
-			if (dateFormatStr.length() == 0) {
-				dateFormatStr = "yyyy-MM-dd";
-			}
-			
-			dateFormat = new SimpleDateFormat(dateFormatStr);
-			String datePatStr = dateFormatStr.replaceAll("[A-Za-z]", Matcher.quoteReplacement("\\d"));
-			System.out.println("date pattern " + datePatStr);
-			datePattern = Pattern.compile(datePatStr);
+			dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+			dateFormatHour = new SimpleDateFormat("yyyy-MM-dd-HH");
+			datePattern = Pattern.compile("\\d{4}-\\d{2}-\\d{2}(-\\d{2})?");
 			
 		} else {
 			dateFormat = null;
+			dateFormatHour = null;
 			datePattern = null;
 		}
 	}
@@ -35,10 +32,14 @@ public class FileDater {
 				Matcher mat = datePattern.matcher(fileName);
 				
 				if (mat.find()) {
-					String dateStr = mat.group(0);
+					String dateStr = mat.group();
 					
 					try {
-						date = dateFormat.parse(dateStr);
+						if (mat.group(1) != null) {
+							date = dateFormatHour.parse(dateStr);
+						} else {
+							date = dateFormat.parse(dateStr);
+						}
 						
 					} catch (Exception e) {
 						e.printStackTrace();

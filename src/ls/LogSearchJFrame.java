@@ -13,6 +13,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
+import java.util.regex.Pattern;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
@@ -20,10 +21,8 @@ import javax.swing.filechooser.FileFilter;
 public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private static final String STARTDATE_PREF = "startdate";
-	private static final String DATEFORMAT_PREF = "dateformat";
 	private static final String PARSEDATE_PREF = "parsedate";
 	private static final String CONTEXT_PREF = "context";
-	private static final String CHARSET_PREF = "charset";
 	private static final String CASE_PREF = "case";
 	private static final String START_OR_AGE_PREF = "start";
 	private static final String EDITOR_PREF = "editor";
@@ -33,6 +32,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private static final String DIR_PREF = "dir";
 	private static final String DIS_DIR_PREF = "disdir";
 	private static final String TITLE = "LogSearch";
+	private static final String REGEX_PREF = "regex";
 	
 	public static void main (String[] args) {
 		LogSearchJFrame instance = new LogSearchJFrame();
@@ -96,10 +96,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final List<File> dirs = new ArrayList<>();
 	private final List<File> disDirs = new ArrayList<>();
 	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
-	private final JTextField charsetField = new JTextField();
 	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
-	private final JTextField dateFormatField = new JTextField();
+	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
 	
 	private volatile SearchThread searchThread;
 	
@@ -130,14 +129,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		startDateButton.setSelected(prefs.getBoolean(START_OR_AGE_PREF, true));
 		ageButton.setSelected(!startDateButton.isSelected());
 		ignoreCaseBox.setSelected(prefs.getBoolean(CASE_PREF, false));
-		charsetField.setText(prefs.get(CHARSET_PREF, "UTF-8"));
 		contextSpinner.setValue(prefs.getInt(CONTEXT_PREF, 2));
 		parseDateBox.setSelected(prefs.getBoolean(PARSEDATE_PREF, true));
-		dateFormatField.setText(prefs.get(DATEFORMAT_PREF, "yyyy-MM-dd"));
 		Calendar cal = Calendar.getInstance();
 		cal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
 		cal.add(Calendar.DATE, -7);
 		startDateSpinner.setValue(new Date(prefs.getLong(STARTDATE_PREF, cal.getTimeInMillis())));
+		regexCheckBox.setSelected(prefs.getBoolean(REGEX_PREF, false));
 	}
 
 	private void savePrefs () {
@@ -150,16 +148,14 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
 		prefs.putBoolean(START_OR_AGE_PREF, startDateButton.isSelected());
 		prefs.putBoolean(CASE_PREF, ignoreCaseBox.isSelected());
-		prefs.put(CHARSET_PREF, charsetField.getText());
 		prefs.putInt(CONTEXT_PREF, (int) contextSpinner.getValue());
 		prefs.putBoolean(PARSEDATE_PREF, parseDateBox.isSelected());
-		prefs.put(DATEFORMAT_PREF, dateFormatField.getText());
 		prefs.putLong(STARTDATE_PREF, ((Date)startDateSpinner.getValue()).getTime());
+		prefs.putBoolean(REGEX_PREF, regexCheckBox.isSelected());
 		try {
-			prefs.sync();
-		} catch (BackingStoreException e) {
+			prefs.flush();
+		} catch (Exception e) {
 			e.printStackTrace();
-			JOptionPane.showMessageDialog(this, e.toString(), "Save Preferences", JOptionPane.WARNING_MESSAGE);
 		}
 	}
 	
@@ -294,13 +290,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		startDateButton.addItemListener(il);
 		ageButton.addItemListener(il);
-		
-		parseDateBox.addItemListener(new ItemListener() {
-			@Override
-			public void itemStateChanged (ItemEvent e) {
-				dateFormatField.setEnabled(parseDateBox.isSelected());
-			}
-		});
 	}
 	
 	private void preview () {
@@ -316,7 +305,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				TextJDialog d = new TextJDialog(this, "Preview");
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
-				d.setHighlight(searchField.getText(), Color.orange);
+				String text = searchField.getText();
+				if (!regexCheckBox.isSelected()) {
+					text = Pattern.quote(text);
+				}
+				final int f = ignoreCaseBox.isSelected() ? Pattern.CASE_INSENSITIVE : 0;
+				Pattern p = Pattern.compile(text, f);
+				d.setHighlight(p, Color.orange);
 				d.setVisible(true);
 			}
 		}
@@ -392,23 +387,21 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		final boolean ignoreCase = ignoreCaseBox.isSelected();
 		
-		Charset cs = Charset.forName(charsetField.getText());
+		final boolean regex = regexCheckBox.isSelected();
 		
-		int context = (int) contextSpinner.getValue();
+		final int context = (int) contextSpinner.getValue();
 		
-		FileDater fd = new FileDater(parseDateBox.isSelected(), dateFormatField.getText());
+		final FileDater fd = new FileDater(parseDateBox.isSelected());
 		
 		savePrefs();
 		
-		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text, ignoreCase, cs, context, fd);
+		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text, regex, ignoreCase, context, fd);
 		searchThread.start();
 	}
 	
 	private void initComponents () {
 		nameField.setColumns(10);
 		searchField.setColumns(15);
-		charsetField.setColumns(10);
-		dateFormatField.setColumns(10);
 		
 		{
 			Calendar cal = new GregorianCalendar();
@@ -430,16 +423,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		JPanel northPanel = new JPanel(new FlowLayout2());
 		northPanel.add(panel(dirLabel, dirButton));
-		northPanel.add(panel(new JLabel("Name Contains"), nameField));
-		northPanel.add(panel(new JLabel("File Contains"), searchField));
-		northPanel.add(ignoreCaseBox);
-		northPanel.add(panel(parseDateBox, dateFormatField));
-		northPanel.add(panel(startDateButton, startDateSpinner));
-		northPanel.add(panel(ageButton, ageSpinner));
-		northPanel.add(panel(new JLabel("Char Set"), charsetField));
+		northPanel.add(panel(new JLabel("Filename Contains"), nameField));
+		northPanel.add(parseDateBox);
+		northPanel.add(panel(new JLabel("Line Contains"), searchField, regexCheckBox, ignoreCaseBox));
+		northPanel.add(panel(startDateButton, startDateSpinner, ageButton, ageSpinner));
 		northPanel.add(panel(new JLabel("Context Lines"), contextSpinner));
-		northPanel.add(startButton);
-		northPanel.add(stopButton);
+		northPanel.add(panel(startButton, stopButton));
 		
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
 		table.getColumnModel().getColumn(1).setPreferredWidth(500);

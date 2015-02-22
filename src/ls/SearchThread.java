@@ -3,6 +3,7 @@ package ls;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
@@ -31,29 +32,29 @@ public class SearchThread extends Thread {
 	private final Set<File> dirs;
 	private final Date startDate;
 	private final Date endDate;
-	private final String nameLower;
+	private final String filenameLower;
 	private final String text;
 	private final boolean ignoreCase;
-	private final Charset charset;
 	private final int contextLines;
 	private final FileDater dateParser;
+	private final Pattern pattern;
 	
 	private long bytes;
 
-	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String name, String text, boolean ignoreCase, Charset charset, int contextLines, FileDater dateParser) {
+	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String filename, String text, boolean regex, boolean ignoreCase, int contextLines, FileDater dateParser) {
 		super("SearchThread");
+		setPriority(Thread.MIN_PRIORITY);
+		setDaemon(true);
 		this.ignoreCase = ignoreCase;
 		this.endDate = endDate;
 		this.listener = listener;
 		this.dirs = dirs;
 		this.startDate = startDate;
-		this.charset = charset;
 		this.contextLines = contextLines;
 		this.dateParser = dateParser;
-		this.nameLower = name.toLowerCase();
+		this.filenameLower = filename.toLowerCase();
 		this.text = ignoreCase ? text.toUpperCase() : text;
-		setPriority(Thread.MIN_PRIORITY);
-		setDaemon(true);
+		this.pattern = regex && text.length() > 0 ? Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
 	}
 	
 	@Override
@@ -89,7 +90,7 @@ public class SearchThread extends Thread {
 	}
 
 	private boolean testName (String name) {
-		return name.toLowerCase().contains(this.nameLower);
+		return name.toLowerCase().contains(this.filenameLower);
 	}
 	
 	private boolean testDate (Date date) {
@@ -211,7 +212,7 @@ public class SearchThread extends Thread {
 		int matches = 0;
 		
 		try (CountingInputStream cis = new CountingInputStream(is)) {
-			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, this.charset))) {
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis))) {
 				int lineno = 1;
 				String line;
 				
@@ -221,12 +222,7 @@ public class SearchThread extends Thread {
 						forward--;
 					}
 					
-					String lineUpper = line;
-					if (ignoreCase) {
-						lineUpper = lineUpper.toUpperCase();
-					}
-					
-					if (lineUpper.contains(text)) {
+					if (testLine(line)) {
 						matches++;
 						
 						for (int n = 0; n < backward.size(); n++) {
@@ -258,5 +254,13 @@ public class SearchThread extends Thread {
 		return matches;
 	}
 	
+	private boolean testLine (String line) {
+		if (pattern != null) {
+			return pattern.matcher(line).find();
+		} else {
+			String lineUpper = ignoreCase ? line.toUpperCase() : line;
+			return lineUpper.contains(text);
+		}
+	}
 	
 }
