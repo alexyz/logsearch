@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project default="jar">
+	
+	<property name="jarfile" value="logsearch.jar" />
 
 	<target name="jar">
-		<jar destfile="dist/logsearch.jar">
+		<jar destfile="dist/${jarfile}">
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
 			</manifest>
@@ -13,7 +15,7 @@
 	</target>
 
 	<target name="deploy" depends="jar">
-		<copy file="dist/logsearch.jar" tofile="${user.home}/Dropbox/Public/logsearch.jar" />
+		<copy file="dist/${jarfile}" tofile="${user.home}/Dropbox/Public/${jarfile}" />
 	</target>
 
 </project>
