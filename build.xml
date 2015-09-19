@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project default="jar" xmlns:ivy="antlib:org.apache.ivy.ant">
-
-	<ivy:configure />
-	<ivy:resolve />
-	<ivy:retrieve type="jar" sync="true" />
+<project default="jar">
 
 	<target name="jar">
 		<jar destfile="dist/logsearch.jar">
@@ -11,7 +7,8 @@
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
 			</manifest>
 			<fileset dir="bin" />
-			<zipgroupfileset dir="lib" includes="**/*.jar" />
+			<!-- run mvn dependency:copy-dependencies first... -->
+			<zipgroupfileset dir="target/dependency" includes="**/*.jar" />
 		</jar>
 	</target>
 
