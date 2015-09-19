@@ -1,12 +1,12 @@
 package ls;
 
 import java.io.*;
-import java.nio.charset.Charset;
 import java.util.*;
 import java.util.regex.Pattern;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
+import org.apache.commons.compress.archivers.zip.ZipMethod;
 import org.apache.commons.io.input.CountingInputStream;
 
 public class SearchThread extends Thread {
@@ -174,13 +174,24 @@ public class SearchThread extends Thread {
 				if (text.length() > 0) {
 					if (result.entry != null) {
 						ZipFile zf = zipFiles.get(result.file);
-						try (InputStream is = zf.getInputStream(zf.getEntry(result.entry))) {
-							result.matches = scanInputStream(result.lines, result.entry, is);
+						final ZipArchiveEntry zae = zf.getEntry(result.entry);
+						if (zf.canReadEntryData(zae)) {
+							try (InputStream is = zf.getInputStream(zae)) {
+								final int i = scanInputStream(result.lines, result.entry, is);
+								if (i > 0) {
+									result.matches = Integer.valueOf(i);
+								}
+							}
+						} else {
+							result.matches = "Cannot read " + ZipMethod.getMethodByCode(zae.getMethod());
 						}
 						
 					} else {
 						try (InputStream is = new FileInputStream(result.file)) {
-							result.matches = scanInputStream(result.lines, result.file.getName(), is);
+							int i = scanInputStream(result.lines, result.file.getName(), is);
+							if (i > 0) {
+								result.matches = Integer.valueOf(i);
+							}
 						}
 					}
 				}

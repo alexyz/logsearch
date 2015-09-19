@@ -7,16 +7,16 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.*;
 import java.io.*;
-import java.nio.charset.Charset;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
+
+import static ls.LogSearchUtil.*;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
 	
@@ -44,37 +44,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		instance.setVisible(true);
 	}
 
-	private static void stringToDirs (List<File> dirs, String dirStr) {
-		StringTokenizer t = new StringTokenizer(dirStr, File.pathSeparator);
-		while (t.hasMoreTokens()) {
-			File d = new File(t.nextToken());
-			if (d.isDirectory()) {
-				dirs.add(d);
-			}
-		}
-	}
-
-	private static String dirsToString (List<File> dirs) {
-		StringBuilder dirSb = new StringBuilder();
-		for (File dir : dirs) {
-			if (dirSb.length() > 0) {
-				dirSb.append(File.pathSeparator);
-			}
-			dirSb.append(dir.getAbsolutePath());
-		}
-		return dirSb.toString();
-	}
-	
-	private static JPanel panel(JComponent... comps) {
-		FlowLayout fl = new FlowLayout();
-		fl.setVgap(0);
-		JPanel p = new JPanel(fl);
-		for (JComponent c : comps) {
-			p.add(c);
-		}
-		return p;
-	}
-	
 	private final JLabel dirLabel = new JLabel();
 	private final JButton dirButton = new JButton("Directories...");
 	private final JTextField nameField = new JTextField();
@@ -93,8 +62,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
 	private final JRadioButton startDateButton = new JRadioButton("Oldest Date");
 	private final JRadioButton ageButton = new JRadioButton("Max Age");
-	private final List<File> dirs = new ArrayList<>();
-	private final List<File> disDirs = new ArrayList<>();
+	private final Set<File> dirs = new TreeSet<>();
+	private final Set<File> disDirs = new TreeSet<>();
 	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
 	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
@@ -121,7 +90,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		nameField.setText(prefs.get(NAME_PREF, "server.log"));
 		searchField.setText(prefs.get(SEARCH_PREF, "a"));
 		ageSpinner.setValue(prefs.getInt(AGE_PREF, 7));
-		editor = new File(prefs.get(EDITOR_PREF, LogSearchUtil.defaultEditor().getAbsolutePath()));
+		editor = new File(prefs.get(EDITOR_PREF, defaultEditor().getAbsolutePath()));
 		if (!editor.exists()) {
 			editor = null;
 		}
@@ -302,7 +271,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				for (Map.Entry<Integer,String> e : result.lines.entrySet()) {
 					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
 				}
-				TextJDialog d = new TextJDialog(this, "Preview");
+				TextJDialog d = new TextJDialog(this, "Preview " + result.name);
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
 				String text = searchField.getText();
@@ -326,13 +295,17 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				File file;
 				
 				if (result.entry != null) {
-					file = LogSearchUtil.unzip(result.file, result.entry);
+					file = unzipFile(result.file, result.entry);
 					
 				} else {
-					file = LogSearchUtil.optionallyDecompress(result.file);
+					file = decompressFile(result.file);
 				}
 				
-				LogSearchUtil.open(editor, file);
+				int lineno = 0;
+				if (result.lines.size() > 0) {
+					lineno = result.lines.keySet().iterator().next();
+				}
+				execOpen(editor, file, lineno);
 			}
 		}
 	}
@@ -351,16 +324,25 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		tableModel.clear();
 		
 		final String text = searchField.getText();
+
+		// sort with highest dirs first
+		final List<File> sortedDirs = new ArrayList<>(dirs);
+		Collections.sort(sortedDirs, new Comparator<File>() {
+			@Override
+			public int compare (File o1, File o2) {
+				return o1.getAbsolutePath().length() - o2.getAbsolutePath().length(); 
+			}
+		});
 		
 		final TreeSet<File> searchDirs = new TreeSet<>();
-		// dirs is sorted, higher dirs are first
-		for (File dir : dirs) {
+		for (File dir : sortedDirs) {
 			String dirStr = dir.getAbsolutePath() + File.separator;
 			boolean add = true;
 			for (File searchDir : searchDirs) {
 				String searchDirStr = searchDir.getAbsolutePath() + File.separator;
 				// is this directory already included
 				if (dirStr.startsWith(searchDirStr)) {
+					System.out.println("exclude dir " + dir + " due to below " + searchDir);
 					add = false;
 					break;
 				}
@@ -431,8 +413,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		northPanel.add(panel(startButton, stopButton));
 		
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
-		table.getColumnModel().getColumn(1).setPreferredWidth(500);
-		table.getColumnModel().getColumn(2).setPreferredWidth(100);
+		table.getColumnModel().getColumn(1).setPreferredWidth(400);
+		table.getColumnModel().getColumn(2).setPreferredWidth(200);
 		JScrollPane tableScroller = new JScrollPane(table);
 		
 		JPanel southPanel = new JPanel();
