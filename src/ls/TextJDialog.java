@@ -26,7 +26,6 @@ public class TextJDialog extends JDialog {
 		textArea.setEditable(false);
 		JScrollPane scroller = new JScrollPane(textArea);
 		
-		loadPrefs();
 		wrapCheckBox.addItemListener(new ItemListener() {
 			@Override
 			public void itemStateChanged (ItemEvent e) {
@@ -55,6 +54,7 @@ public class TextJDialog extends JDialog {
 		setPreferredSize(new Dimension(640, 480));
 		pack();
 		setLocationRelativeTo(frame);
+		loadPrefs();
 	}
 
 	public void setTextFont(Font font) {

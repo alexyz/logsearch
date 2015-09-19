@@ -4,12 +4,14 @@ import java.io.File;
 import java.util.*;
 
 public class Result implements Comparable<Result> {
+	/** map of line number to line */
 	public final Map<Integer,String> lines = new TreeMap<>();
 	public final String name;
 	public final Date date;
 	public final File file;
 	public final String entry;
-	public int matches;
+	// updated during search
+	public Object matches;
 	
 	public Result (File file, Date date, String entry) {
 		this.file = file;

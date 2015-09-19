@@ -85,9 +85,13 @@ public class ResultTableModel extends AbstractTableModel {
 			case 0:
 				return DateFormat.getDateTimeInstance().format(r.date);
 			case 1:
-				return r.name;
+				if (r.entry != null) {
+					return r.name + " [" + r.file.getName() + "]";
+				} else {
+					return r.name;
+				}
 			case 2:
-				return r.matches != 0 ? r.matches : "";
+				return r.matches != null ? r.matches : "";
 			default:
 				return null;
 		}
