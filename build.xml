@@ -1,21 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project default="jar">
-	
-	<property name="jarfile" value="logsearch.jar" />
 
-	<target name="jar">
-		<jar destfile="dist/${jarfile}">
+	<!-- run mvn dependency:copy-dependencies first... -->
+
+	<path id="cp">
+		<fileset dir="target/dependency" includes="**/*.jar" />
+	</path>
+
+	<target name="compile" unless="eclipse.pdebuild.home">
+		<mkdir dir="bin" />
+		<javac classpathref="cp" srcdir="src" destdir="bin" source="1.7" target="1.7" includeAntRuntime="false" />
+	</target>
+
+	<target name="jar" depends="compile">
+		<tstamp />
+		<jar destfile="dist/logsearch.jar">
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
+				<attribute name="DSTAMP" value="${DSTAMP}" />
 			</manifest>
 			<fileset dir="bin" />
-			<!-- run mvn dependency:copy-dependencies first... -->
 			<zipgroupfileset dir="target/dependency" includes="**/*.jar" />
 		</jar>
 	</target>
 
 	<target name="deploy" depends="jar">
-		<copy file="dist/${jarfile}" tofile="${user.home}/Dropbox/Public/${jarfile}" />
+		<copy todir="${user.home}/Dropbox/Public">
+			<fileset dir="dist" includes="**/*.jar" />
+		</copy>
 	</target>
 
 </project>
