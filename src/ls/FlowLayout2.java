@@ -7,19 +7,31 @@ import java.awt.*;
  */
 public class FlowLayout2 extends FlowLayout {
 	@Override
-	public Dimension preferredLayoutSize (Container target) {
-		System.out.println("preferred layout size");
-		int x = 0;
-		int y = 0;
-		for (int n = 0; n < target.getComponentCount(); n++) {
-			Component c = target.getComponent(n);
-			x = Math.max(x, c.getX() + c.getWidth());
-			y = Math.max(y, c.getY() + c.getHeight());
+	public Dimension preferredLayoutSize (final Container cont) {
+		System.out.println("container size " + cont.getSize() + " parent " + cont.getParent().getClass() + " size " + cont.getParent().getSize());
+		double x = 0, y = 0, totalx = 0, totaly = 0;
+
+		for (int n = 0; n < cont.getComponentCount(); n++) {
+			final Component c = cont.getComponent(n);
+			final Dimension s = c.getPreferredSize();
+			final double w = s.getWidth() + getHgap();
+			final double h = s.getHeight() + getVgap();
+			if (x == 0 || x + w < cont.getWidth()) {
+				x += w;
+				y = Math.max(y, h);
+			} else {
+				totalx = Math.max(x, totalx);
+				totaly += y;
+				x = w;
+				y = h;
+			}
 		}
-		Insets i = target.getInsets();
-		x = x + i.bottom + getVgap();
-		y = y + i.right + getHgap();
-		System.out.println("max " + x + "," + y);
-		return new Dimension(x, y);
+
+		final Insets i = cont.getInsets();
+		totalx += x + i.right + getHgap();
+		totaly += y + i.bottom + getVgap();
+		System.out.println("preferred layout size " + totalx + "," + totaly);
+		return new Dimension((int) totalx, (int) totaly);
 	}
+
 }

@@ -3,13 +3,15 @@ package ls;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.*;
 import java.io.*;
-import java.text.DateFormat;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
 import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
 
@@ -19,8 +21,10 @@ import javax.swing.filechooser.FileFilter;
 import static ls.LogSearchUtil.*;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
-	
+
+	private static final SimpleDateFormat DF = new SimpleDateFormat("yyyy-MM-dd");
 	private static final String STARTDATE_PREF = "startdate";
+	private static final String ENDDATE_PREF = "enddate";
 	private static final String PARSEDATE_PREF = "parsedate";
 	private static final String CONTEXT_PREF = "context";
 	private static final String CASE_PREF = "case";
@@ -31,16 +35,37 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private static final String NAME_PREF = "name";
 	private static final String DIR_PREF = "dir";
 	private static final String DIS_DIR_PREF = "disdir";
-	private static final String TITLE = "LogSearch";
 	private static final String REGEX_PREF = "regex";
 	
-	public static void main (String[] args) {
-		LogSearchJFrame instance = new LogSearchJFrame();
+	private static String dateStamp;
+	
+	private static String getDateStamp() {
+		ClassLoader cl = ClassLoader.getSystemClassLoader();
+		if (cl instanceof URLClassLoader) {
+			URLClassLoader ucl = (URLClassLoader) cl;
+			URL url = ucl.findResource("META-INF/MANIFEST.MF");
+			try {
+				Manifest manifest = new Manifest(url.openStream());
+				Attributes attributes = manifest.getMainAttributes();
+				String dateStamp = attributes.getValue("DSTAMP");
+				if (dateStamp != null) {
+					return dateStamp;
+				}
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		return "";
+	}
+
+	public static void main (final String[] args) {
+		dateStamp = getDateStamp();
 		try {
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
-		} catch (Exception e) {
+		} catch (final Exception e) {
 			e.printStackTrace();
 		}
+		final LogSearchJFrame instance = new LogSearchJFrame();
 		instance.setVisible(true);
 	}
 
@@ -49,6 +74,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JTextField nameField = new JTextField();
 	private final JTextField searchField = new JTextField();
 	private final JSpinner startDateSpinner = new JSpinner();
+	private final JSpinner endDateSpinner = new JSpinner();
 	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(7, 1, 999, 1));
 	private final JButton startButton = new JButton("Start");
 	private final JButton stopButton = new JButton("Stop");
@@ -60,28 +86,28 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JButton previewButton = new JButton("Preview");
 	private final JToggleButton showAllButton = new JToggleButton("Show Unmatched");
 	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
-	private final JRadioButton startDateButton = new JRadioButton("Oldest Date");
-	private final JRadioButton ageButton = new JRadioButton("Max Age");
+	private final JRadioButton dateRadioButton = new JRadioButton("Date Range");
+	private final JRadioButton ageRadioButton = new JRadioButton("Age (Days)");
 	private final Set<File> dirs = new TreeSet<>();
 	private final Set<File> disDirs = new TreeSet<>();
 	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
 	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
-	
+
 	private volatile SearchThread searchThread;
-	
+
 	private File editor;
-	
+
 	public LogSearchJFrame () {
-		super(TITLE);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		setPreferredSize(new Dimension(800, 600));
 		initComponents();
 		initListeners();
 		loadPrefs();
+		updateTitle(null);
 	}
-	
+
 	private void loadPrefs () {
 		System.out.println("load prefs");
 		stringToDirs(dirs, prefs.get(DIR_PREF, System.getProperty("user.dir")));
@@ -95,16 +121,20 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			editor = null;
 		}
 		editorLabel.setText(editor != null ? editor.getName() : "no editor");
-		startDateButton.setSelected(prefs.getBoolean(START_OR_AGE_PREF, true));
-		ageButton.setSelected(!startDateButton.isSelected());
+		dateRadioButton.setSelected(prefs.getBoolean(START_OR_AGE_PREF, true));
+		ageRadioButton.setSelected(!dateRadioButton.isSelected());
 		ignoreCaseBox.setSelected(prefs.getBoolean(CASE_PREF, false));
 		contextSpinner.setValue(prefs.getInt(CONTEXT_PREF, 2));
 		parseDateBox.setSelected(prefs.getBoolean(PARSEDATE_PREF, true));
-		Calendar cal = Calendar.getInstance();
-		cal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
-		cal.add(Calendar.DATE, -7);
-		startDateSpinner.setValue(new Date(prefs.getLong(STARTDATE_PREF, cal.getTimeInMillis())));
 		regexCheckBox.setSelected(prefs.getBoolean(REGEX_PREF, false));
+
+		final Calendar cal = new GregorianCalendar();
+		final GregorianCalendar midnightCal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
+		final Date endDate = midnightCal.getTime();
+		midnightCal.add(Calendar.DATE, -7);
+		final Date startDate = midnightCal.getTime();
+		startDateSpinner.setValue(new Date(prefs.getLong(STARTDATE_PREF, startDate.getTime())));
+		endDateSpinner.setValue(new Date(prefs.getLong(ENDDATE_PREF, endDate.getTime())));
 	}
 
 	private void savePrefs () {
@@ -115,32 +145,33 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.put(SEARCH_PREF, searchField.getText());
 		prefs.put(EDITOR_PREF, editor != null ? editor.getAbsolutePath() : "");
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
-		prefs.putBoolean(START_OR_AGE_PREF, startDateButton.isSelected());
+		prefs.putBoolean(START_OR_AGE_PREF, dateRadioButton.isSelected());
 		prefs.putBoolean(CASE_PREF, ignoreCaseBox.isSelected());
 		prefs.putInt(CONTEXT_PREF, (int) contextSpinner.getValue());
 		prefs.putBoolean(PARSEDATE_PREF, parseDateBox.isSelected());
 		prefs.putLong(STARTDATE_PREF, ((Date)startDateSpinner.getValue()).getTime());
+		prefs.putLong(ENDDATE_PREF, ((Date)endDateSpinner.getValue()).getTime());
 		prefs.putBoolean(REGEX_PREF, regexCheckBox.isSelected());
 		try {
 			prefs.flush();
-		} catch (Exception e) {
+		} catch (final Exception e) {
 			e.printStackTrace();
 		}
 	}
-	
+
 	private void initListeners () {
 		addWindowListener(new WindowAdapter() {
 			@Override
-			public void windowClosing (WindowEvent e) {
+			public void windowClosing (final WindowEvent e) {
 				System.out.println("window closing");
 				savePrefs();
 			}
 		});
-			
+
 		dirButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent e) {
-				DirectoryJDialog d = new DirectoryJDialog(LogSearchJFrame.this, "Log Directories");
+			public void actionPerformed (final ActionEvent e) {
+				final DirectoryJDialog d = new DirectoryJDialog(LogSearchJFrame.this, "Log Directories");
 				d.addDirs(dirs, true);
 				d.addDirs(disDirs, false);
 				d.setVisible(true);
@@ -153,125 +184,126 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 			}
 		});
-		
+
 		editorButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent e) {
-				JFileChooser fc = new JFileChooser();
+			public void actionPerformed (final ActionEvent e) {
+				final JFileChooser fc = new JFileChooser();
 				if (editor != null) {
 					fc.setSelectedFile(editor);
 				}
 				fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
 				fc.setFileFilter(new FileFilter() {
-					
+
 					@Override
 					public String getDescription () {
 						return "Executables";
 					}
-					
+
 					@Override
-					public boolean accept (File f) {
+					public boolean accept (final File f) {
 						return f.isDirectory() || f.getName().toLowerCase().endsWith(".exe");
 					}
 				});
-				int o = fc.showOpenDialog(LogSearchJFrame.this);
+				final int o = fc.showOpenDialog(LogSearchJFrame.this);
 				if (o == JFileChooser.APPROVE_OPTION) {
 					editor = fc.getSelectedFile();
 					editorLabel.setText(editor.getName());
 				}
 			}
 		});
-		
+
 		startButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent ae) {
+			public void actionPerformed (final ActionEvent ae) {
 				try {
 					search();
-				} catch (Exception e) {
+				} catch (final Exception e) {
 					e.printStackTrace();
 					JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString());
 				}
 			}
 		});
-		
+
 		stopButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent e) {
+			public void actionPerformed (final ActionEvent e) {
 				if (searchThread != null) {
 					searchThread.running = false;
 				}
 			}
 		});
-		
+
 		openButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent ae) {
+			public void actionPerformed (final ActionEvent ae) {
 				try {
 					open();
-				} catch (Exception e) {
+				} catch (final Exception e) {
 					e.printStackTrace();
 					JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "Open", JOptionPane.ERROR_MESSAGE);
 				}
 			}
-			
+
 		});
-		
+
 		previewButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent ae) {
+			public void actionPerformed (final ActionEvent ae) {
 				preview();
 			}
-			
+
 		});
-		
+
 		table.addMouseListener(new MouseAdapter() {
 			@Override
-			public void mouseClicked (MouseEvent e) {
+			public void mouseClicked (final MouseEvent e) {
 				if (e.getClickCount() == 2) {
 					preview();
 				}
 			}
 		});
-		
+
 		showAllButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed (ActionEvent e) {
-				int r = table.getSelectedRow();
+			public void actionPerformed (final ActionEvent e) {
+				final int r = table.getSelectedRow();
 				Result result = null;
 				if (r >= 0) {
 					result = tableModel.getResult(r);
 				}
 				tableModel.setShowAll(showAllButton.isSelected());
-				int r2 = tableModel.getRow(result);
+				final int r2 = tableModel.getRow(result);
 				if (r2 >= 0) {
 					table.getSelectionModel().setSelectionInterval(r2, r2);
 				}
 			}
 		});
-		
-		ItemListener il = new ItemListener() {
+
+		final ItemListener radioButtonListener = new ItemListener() {
 			@Override
-			public void itemStateChanged (ItemEvent e) {
-				startDateSpinner.setEnabled(startDateButton.isSelected());
-				ageSpinner.setEnabled(ageButton.isSelected());
+			public void itemStateChanged (final ItemEvent e) {
+				startDateSpinner.setEnabled(dateRadioButton.isSelected());
+				endDateSpinner.setEnabled(dateRadioButton.isSelected());
+				ageSpinner.setEnabled(ageRadioButton.isSelected());
 			}
 		};
-		
-		startDateButton.addItemListener(il);
-		ageButton.addItemListener(il);
+
+		dateRadioButton.addItemListener(radioButtonListener);
+		ageRadioButton.addItemListener(radioButtonListener);
 	}
-	
+
 	private void preview () {
 		System.out.println("preview");
-		int row = table.getSelectedRow();
+		final int row = table.getSelectedRow();
 		if (row >= 0) {
-			Result result = tableModel.getResult(row);
+			final Result result = tableModel.getResult(row);
 			if (result.lines.size() > 0) {
-				StringBuffer sb = new StringBuffer();
-				for (Map.Entry<Integer,String> e : result.lines.entrySet()) {
+				final StringBuffer sb = new StringBuffer();
+				for (final Map.Entry<Integer,String> e : result.lines.entrySet()) {
 					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
 				}
-				TextJDialog d = new TextJDialog(this, "Preview " + result.name);
+				final TextJDialog d = new TextJDialog(this, "Preview " + result.name);
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
 				String text = searchField.getText();
@@ -279,28 +311,28 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 					text = Pattern.quote(text);
 				}
 				final int f = ignoreCaseBox.isSelected() ? Pattern.CASE_INSENSITIVE : 0;
-				Pattern p = Pattern.compile(text, f);
+				final Pattern p = Pattern.compile(text, f);
 				d.setHighlight(p, Color.orange);
 				d.setVisible(true);
 			}
 		}
 	}
-	
+
 	private void open () throws Exception {
 		System.out.println("open");
-		int r = table.getSelectedRow();
+		final int r = table.getSelectedRow();
 		if (r >= 0) {
 			if (editor != null) {
-				Result result = tableModel.getResult(r);
+				final Result result = tableModel.getResult(r);
 				File file;
-				
+
 				if (result.entry != null) {
 					file = unzipFile(result.file, result.entry);
-					
+
 				} else {
 					file = decompressFile(result.file);
 				}
-				
+
 				int lineno = 0;
 				if (result.lines.size() > 0) {
 					lineno = result.lines.keySet().iterator().next();
@@ -312,34 +344,34 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	private void search () throws Exception {
 		System.out.println(SEARCH_PREF);
-		
+
 		if (searchThread != null) {
-			throw new Exception("already running");
+			throw new Exception("Already running");
 		}
-		
+
 		if (dirs.size() == 0) {
-			throw new Exception("no dirs");
+			throw new Exception("No directories chosen");
 		}
-		
+
 		tableModel.clear();
-		
+
 		final String text = searchField.getText();
 
 		// sort with highest dirs first
 		final List<File> sortedDirs = new ArrayList<>(dirs);
 		Collections.sort(sortedDirs, new Comparator<File>() {
 			@Override
-			public int compare (File o1, File o2) {
-				return o1.getAbsolutePath().length() - o2.getAbsolutePath().length(); 
+			public int compare (final File o1, final File o2) {
+				return o1.getAbsolutePath().length() - o2.getAbsolutePath().length();
 			}
 		});
-		
+
 		final TreeSet<File> searchDirs = new TreeSet<>();
-		for (File dir : sortedDirs) {
-			String dirStr = dir.getAbsolutePath() + File.separator;
+		for (final File dir : sortedDirs) {
+			final String dirStr = dir.getAbsolutePath() + File.separator;
 			boolean add = true;
-			for (File searchDir : searchDirs) {
-				String searchDirStr = searchDir.getAbsolutePath() + File.separator;
+			for (final File searchDir : searchDirs) {
+				final String searchDirStr = searchDir.getAbsolutePath() + File.separator;
 				// is this directory already included
 				if (dirStr.startsWith(searchDirStr)) {
 					System.out.println("exclude dir " + dir + " due to below " + searchDir);
@@ -352,78 +384,84 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		}
 		System.out.println("dirs to search: " + searchDirs);
-		
+
 		final Date startDate;
-		if (startDateButton.isSelected()) {
+		final Date endDate;
+		
+		if (dateRadioButton.isSelected()) {
 			startDate = (Date) startDateSpinner.getValue();
+			long msInDay = 1000 * 60 * 60 * 24;
+			Date endDateInclusive = (Date) endDateSpinner.getValue();
+			endDate = new Date(endDateInclusive.getTime() + msInDay);
+			
 		} else {
-			Calendar cal = new GregorianCalendar();
+			final Calendar cal = new GregorianCalendar();
 			cal.add(Calendar.DATE, -(int)ageSpinner.getValue());
 			startDate = cal.getTime();
+			endDate = new Date();
 		}
+		
+		if (startDate.compareTo(endDate) >= 0) {
+			throw new Exception("Start date equal to or after end date");
+		}
+		
 		final String name = nameField.getText();
 		if (name.length() == 0) {
-			System.out.println("no name filter");
-			return;
+			throw new Exception("No file name filter");
 		}
-		
+
 		final boolean ignoreCase = ignoreCaseBox.isSelected();
-		
+
 		final boolean regex = regexCheckBox.isSelected();
-		
+
 		final int context = (int) contextSpinner.getValue();
-		
+
 		final FileDater fd = new FileDater(parseDateBox.isSelected());
-		
+
 		savePrefs();
-		
-		searchThread = new SearchThread(this, searchDirs, startDate, null, name, text, regex, ignoreCase, context, fd);
+
+		searchThread = new SearchThread(this, searchDirs, startDate, endDate, name, text, regex, ignoreCase, context, fd);
 		searchThread.start();
 	}
-	
+
 	private void initComponents () {
 		nameField.setColumns(10);
 		searchField.setColumns(15);
-		
+
 		{
-			Calendar cal = new GregorianCalendar();
-			int y = cal.get(Calendar.YEAR);
-			int m = cal.get(Calendar.MONTH);
-			int d = cal.get(Calendar.DATE);
-			GregorianCalendar startCal = new GregorianCalendar(y, m, d);
-			startCal.add(Calendar.DATE, -7);
-			Date dstart = startCal.getTime();
-			Date dmax = new GregorianCalendar(y + 10, m, d).getTime();
-			Date dmin = new GregorianCalendar(y - 10, m, d).getTime();
-			startDateSpinner.setModel(new SpinnerDateModel(dstart, dmin, dmax, Calendar.DATE));
-			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, ((SimpleDateFormat)DateFormat.getDateInstance()).toPattern()));
+			final Date maxDate = new GregorianCalendar(2099, 11, 31).getTime();
+			final Date minDate = new GregorianCalendar(2000, 0, 1).getTime();
+			startDateSpinner.setModel(new SpinnerDateModel(minDate, minDate, maxDate, Calendar.DATE));
+			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, DF.toPattern()));
+			endDateSpinner.setModel(new SpinnerDateModel(maxDate, minDate, maxDate, Calendar.DATE));
+			endDateSpinner.setEditor(new JSpinner.DateEditor(endDateSpinner, DF.toPattern()));
 		}
-		
-		ButtonGroup bg = new ButtonGroup();
-		bg.add(startDateButton);
-		bg.add(ageButton);
-		
-		JPanel northPanel = new JPanel(new FlowLayout2());
+
+		final ButtonGroup bg = new ButtonGroup();
+		bg.add(dateRadioButton);
+		bg.add(ageRadioButton);
+
+		final JPanel northPanel = new JPanel(new FlowLayout2());
 		northPanel.add(panel(dirLabel, dirButton));
 		northPanel.add(panel(new JLabel("Filename Contains"), nameField));
 		northPanel.add(parseDateBox);
 		northPanel.add(panel(new JLabel("Line Contains"), searchField, regexCheckBox, ignoreCaseBox));
-		northPanel.add(panel(startDateButton, startDateSpinner, ageButton, ageSpinner));
+		northPanel.add(panel(dateRadioButton, startDateSpinner, new JLabel("-"), endDateSpinner, ageRadioButton, ageSpinner));
 		northPanel.add(panel(new JLabel("Context Lines"), contextSpinner));
 		northPanel.add(panel(startButton, stopButton));
-		
+
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
 		table.getColumnModel().getColumn(1).setPreferredWidth(400);
 		table.getColumnModel().getColumn(2).setPreferredWidth(200);
-		JScrollPane tableScroller = new JScrollPane(table);
-		
-		JPanel southPanel = new JPanel();
+		final JScrollPane tableScroller = new JScrollPane(table);
+
+		final JPanel southPanel = new JPanel();
 		southPanel.add(showAllButton);
 		southPanel.add(previewButton);
 		southPanel.add(panel(editorLabel, editorButton));
 		southPanel.add(openButton);
-		
-		JPanel contentPanel = new JPanel(new BorderLayout());
+
+		final JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(northPanel, BorderLayout.NORTH);
 		contentPanel.add(tableScroller, BorderLayout.CENTER);
 		contentPanel.add(southPanel, BorderLayout.SOUTH);
@@ -431,36 +469,40 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		setContentPane(contentPanel);
 		pack();
 	}
+	
+	private void updateTitle(String msg) {
+		String t = "LogSearch" + dateStamp;
+		if (msg != null && msg.length() > 0) {
+			t += " [" + msg + "]";
+		}
+		setTitle(t);
+	}
 
 	@Override
 	public void searchResult (final Result fd) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
-				int r = table.getSelectedRow();
+				final int r = table.getSelectedRow();
 				Result result = null;
 				if (r >= 0) {
 					result = tableModel.getResult(r);
 				}
 				tableModel.add(fd);
-				int r2 = tableModel.getRow(result);
+				final int r2 = tableModel.getRow(result);
 				if (r2 >= 0) {
 					table.getSelectionModel().setSelectionInterval(r2, r2);
 				}
 			}
 		});
 	}
-	
+
 	@Override
 	public void searchUpdate (final String msg) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
-				if (msg != null && msg.length() > 0) {
-					setTitle(TITLE + " [" + msg + "]");
-				} else {
-					setTitle(TITLE);
-				}
+				updateTitle(msg);
 			}
 		});
 	}
@@ -470,7 +512,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
-				setTitle(TITLE);
+				updateTitle(null);
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
