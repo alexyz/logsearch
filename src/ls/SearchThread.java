@@ -177,7 +177,7 @@ public class SearchThread extends Thread {
 						final ZipArchiveEntry zae = zf.getEntry(result.entry);
 						if (zf.canReadEntryData(zae)) {
 							try (InputStream is = zf.getInputStream(zae)) {
-								final int i = scanInputStream(result.lines, result.entry, is);
+								final int i = scanInputStream(result, result.entry, is);
 								if (i > 0) {
 									result.matches = Integer.valueOf(i);
 								}
@@ -188,7 +188,7 @@ public class SearchThread extends Thread {
 						
 					} else {
 						try (InputStream is = new FileInputStream(result.file)) {
-							int i = scanInputStream(result.lines, result.file.getName(), is);
+							int i = scanInputStream(result, result.file.getName(), is);
 							if (i > 0) {
 								result.matches = Integer.valueOf(i);
 							}
@@ -206,18 +206,18 @@ public class SearchThread extends Thread {
 		}
 	}
 	
-	private int scanInputStream (final Map<Integer,String> lines, String name, InputStream is) throws Exception {
+	private int scanInputStream (final Result result, String name, InputStream is) throws Exception {
 		System.out.println("scan " + name);
 		
-		try (InputStream is2 = LogSearchUtil.optionallyDecompress(name, new BufferedInputStream(is))) {
-			return scanInputStream2(lines, is2);
+		try (InputStream is2 = LogSearchUtil.toInputStream(name, new BufferedInputStream(is))) {
+			return scanInputStream2(result, is2);
 			
 		} finally {
 			System.gc();
 		}
 	}
 	
-	private int scanInputStream2 (final Map<Integer,String> lines, final InputStream is) throws Exception {
+	private int scanInputStream2 (final Result result, final InputStream is) throws Exception {
 		final List<String> backward = new ArrayList<>();
 		int forward = 0;
 		int matches = 0;
@@ -226,21 +226,22 @@ public class SearchThread extends Thread {
 			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis))) {
 				int lineno = 1;
 				String line;
+				long offset = cis.getByteCount();
 				
 				while (running && (line = br.readLine()) != null) {
 					if (forward > 0) {
-						lines.put(lineno, line);
+						result.lines.put(lineno, line);
 						forward--;
 					}
 					
 					if (testLine(line)) {
 						matches++;
-						
+						result.offsets.add(offset);
 						for (int n = 0; n < backward.size(); n++) {
 							// backward = [l-3] [l-2] [l-1]
-							lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
+							result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
 						}
-						lines.put(lineno, line);
+						result.lines.put(lineno, line);
 						forward = contextLines;
 					}
 					

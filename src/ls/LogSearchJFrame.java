@@ -8,6 +8,8 @@ import java.awt.event.*;
 import java.io.*;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.channels.FileChannel;
+import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.jar.Attributes;
@@ -37,8 +39,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private static final String DIS_DIR_PREF = "disdir";
 	private static final String REGEX_PREF = "regex";
 	
-	private static String dateStamp;
-	
 	private static String getDateStamp() {
 		ClassLoader cl = ClassLoader.getSystemClassLoader();
 		if (cl instanceof URLClassLoader) {
@@ -59,7 +59,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 
 	public static void main (final String[] args) {
-		dateStamp = getDateStamp();
 		try {
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
 		} catch (final Exception e) {
@@ -94,7 +93,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
-
+	private final JButton viewButton = new JButton("View");
+	private final String dateStamp;
+	
 	private volatile SearchThread searchThread;
 
 	private File editor;
@@ -106,6 +107,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		initListeners();
 		loadPrefs();
 		updateTitle(null);
+		dateStamp = getDateStamp();
 	}
 
 	private void loadPrefs () {
@@ -291,7 +293,33 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 		dateRadioButton.addItemListener(radioButtonListener);
 		ageRadioButton.addItemListener(radioButtonListener);
+		
+		viewButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				view();
+			}
+		});
 	}
+	
+	private void view() {
+		System.out.println("view");
+		final int r = table.getSelectedRow();
+		if (r >= 0) {
+			final Result result = tableModel.getResult(r);
+			try {
+				File file = toFile(result);
+				try (FileChannel fc = FileChannel.open(file.toPath(), StandardOpenOption.READ)) {
+					ViewJFrame dialog = new ViewJFrame(this, result);
+					dialog.setVisible(true);
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+				JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "View", JOptionPane.ERROR_MESSAGE);
+			}
+		}
+	}
+
 
 	private void preview () {
 		System.out.println("preview");
@@ -320,25 +348,21 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	private void open () throws Exception {
 		System.out.println("open");
+		
+		if (editor == null) {
+			throw new Exception("no editor");
+		}
+		
 		final int r = table.getSelectedRow();
 		if (r >= 0) {
-			if (editor != null) {
-				final Result result = tableModel.getResult(r);
-				File file;
+			final Result result = tableModel.getResult(r);
+			File file = toFile(result);
 
-				if (result.entry != null) {
-					file = unzipFile(result.file, result.entry);
-
-				} else {
-					file = decompressFile(result.file);
-				}
-
-				int lineno = 0;
-				if (result.lines.size() > 0) {
-					lineno = result.lines.keySet().iterator().next();
-				}
-				execOpen(editor, file, lineno);
+			int lineno = 0;
+			if (result.lines.size() > 0) {
+				lineno = result.lines.keySet().iterator().next();
 			}
+			execOpen(editor, file, lineno);
 		}
 	}
 
@@ -458,6 +482,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		final JPanel southPanel = new JPanel();
 		southPanel.add(showAllButton);
 		southPanel.add(previewButton);
+		southPanel.add(viewButton);
 		southPanel.add(panel(editorLabel, editorButton));
 		southPanel.add(openButton);
 

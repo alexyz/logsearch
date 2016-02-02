@@ -5,10 +5,12 @@ import java.util.*;
 
 public class Result implements Comparable<Result> {
 	/** map of line number to line */
-	public final Map<Integer,String> lines = new TreeMap<>();
+	public final NavigableMap<Integer,String> lines = new TreeMap<>();
+	public final NavigableSet<Long> offsets = new TreeSet<>();
 	public final String name;
 	public final Date date;
 	public final File file;
+	/** zip file entry name */
 	public final String entry;
 	// updated during search
 	public Object matches;

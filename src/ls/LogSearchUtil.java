@@ -39,38 +39,33 @@ public class LogSearchUtil {
 	}
 	
 	/** decompress if compressed, otherwise return same input stream */
-	public static InputStream optionallyDecompress (String name, BufferedInputStream is) throws Exception {
+	public static InputStream toInputStream (String name, BufferedInputStream is) throws Exception {
 		if (isCompressed(name)) {
-			CompressorStreamFactory f = new CompressorStreamFactory();
-			f.setDecompressConcatenated(true);
+			CompressorStreamFactory f = new CompressorStreamFactory(true);
 			return f.createCompressorInputStream(is);
-			
 		} else {
 			return is;
 		}
 	}
 	
-	/** unzip to temp file */
-	public static File unzipFile (File zipFile, String entry) throws Exception {
-		System.out.println("unzip " + zipFile + ", " + entry);
-		try (ZipFile zf = new ZipFile(zipFile)) {
-			ZipArchiveEntry ze = zf.getEntry(entry);
-			try (InputStream is = optionallyDecompress(entry, new BufferedInputStream(zf.getInputStream(ze)))) {
-				return createTempFile(zipFile.getName() + "." + ze.getName(), is);
+	/**
+	 * get uncompressed file for result
+	 */
+	public static File toFile(final Result result) throws Exception {
+		// FIXME need to cache the temp files
+		if (result.entry != null) {
+			try (ZipFile zf = new ZipFile(result.file)) {
+				ZipArchiveEntry ze = zf.getEntry(result.entry);
+				try (InputStream is = toInputStream(result.entry, new BufferedInputStream(zf.getInputStream(ze)))) {
+					return createTempFile(result.file.getName() + "." + ze.getName(), is);
+				}
 			}
-		}
-	}
-	
-	/** uncompress to temp file if compressed, otherwise return same file */
-	public static File decompressFile (File file) throws Exception {
-		System.out.println("optionally decompress " + file);
-		if (isCompressed(file.getName())) {
-			try (InputStream is = optionallyDecompress(file.getName(), new BufferedInputStream(new FileInputStream(file)))) {
-				return createTempFile(file.getName(), is);
+		} else if (isCompressed(result.file.getName())) {
+			try (InputStream is = toInputStream(result.file.getName(), new BufferedInputStream(new FileInputStream(result.file)))) {
+				return createTempFile(result.file.getName(), is);
 			}
-			
 		} else {
-			return file;
+			return result.file;
 		}
 	}
 	
