@@ -7,12 +7,17 @@ import javax.swing.table.AbstractTableModel;
 
 public class ResultTableModel extends AbstractTableModel {
 	
+	/** results list, this is always sorted */
 	private final List<Result> results = new ArrayList<>();
 	private final List<Result> matchingResults = new ArrayList<>();
 	private boolean showAll;
 	
-	private List<Result> getResults() {
+	private List<Result> getCurrentResults() {
 		return showAll ? results : matchingResults;
+	}
+	
+	public List<Result> getResults() {
+		return results;
 	}
 	
 	public void clear () {
@@ -32,12 +37,12 @@ public class ResultTableModel extends AbstractTableModel {
 	}
 	
 	public Result getResult (int row) {
-		return getResults().get(row);
+		return getCurrentResults().get(row);
 	}
 	
 	@Override
 	public int getRowCount () {
-		return getResults().size();
+		return getCurrentResults().size();
 	}
 	
 	@Override
@@ -46,7 +51,7 @@ public class ResultTableModel extends AbstractTableModel {
 	}
 	
 	public int getRow (Result r) {
-		List<Result> results = getResults();
+		List<Result> results = getCurrentResults();
 		for (int n = 0; n < results.size(); n++) {
 			if (results.get(n).equals(r)) {
 				return n;
@@ -69,7 +74,7 @@ public class ResultTableModel extends AbstractTableModel {
 	}
 	
 	public String getToolTipAt (int row, int col) {
-		Result r = getResults().get(row);
+		Result r = getCurrentResults().get(row);
 		switch (col) {
 			case 1:
 				return r.file.getAbsolutePath() + (r.entry != null ? ": " + r.entry : "");
@@ -80,16 +85,12 @@ public class ResultTableModel extends AbstractTableModel {
 	
 	@Override
 	public Object getValueAt (int row, int col) {
-		Result r = getResults().get(row);
+		Result r = getCurrentResults().get(row);
 		switch (col) {
 			case 0:
 				return DateFormat.getDateTimeInstance().format(r.date);
 			case 1:
-				if (r.entry != null) {
-					return r.name + " [" + r.file.getName() + "]";
-				} else {
-					return r.name;
-				}
+				return r.name();
 			case 2:
 				return r.matches != null ? r.matches : "";
 			default:

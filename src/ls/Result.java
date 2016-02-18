@@ -30,6 +30,15 @@ public class Result implements Comparable<Result> {
 		}
 	}
 	
+	/** name of file plus name of zip file if any */
+	public String name() {
+		if (entry != null) {
+			return name + " [" + file.getName() + "]";
+		} else {
+			return name;
+		}
+	}
+	
 	@Override
 	public int compareTo (Result o) {
 		int c = date.compareTo(o.date);

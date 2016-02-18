@@ -126,10 +126,18 @@ public class LogSearchUtil {
 		return dirSb.toString();
 	}
 	
-	public static JPanel panel(JComponent... comps) {
+	public static JPanel inlineFlowPanel(JComponent... comps) {
 		FlowLayout fl = new FlowLayout();
 		fl.setVgap(0);
 		JPanel p = new JPanel(fl);
+		for (JComponent c : comps) {
+			p.add(c);
+		}
+		return p;
+	}
+	
+	public static JPanel flowPanel(JComponent... comps) {
+		JPanel p = new JPanel();
 		for (JComponent c : comps) {
 			p.add(c);
 		}
