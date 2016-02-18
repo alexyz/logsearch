@@ -8,6 +8,7 @@
 	</path>
 
 	<target name="compile" unless="eclipse.pdebuild.home">
+		<delete dir="bin" />
 		<mkdir dir="bin" />
 		<javac classpathref="cp" srcdir="src" destdir="bin" source="1.7" target="1.7" includeAntRuntime="false" />
 	</target>
@@ -17,7 +18,6 @@
 		<jar destfile="dist/logsearch.jar">
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
-				<attribute name="DSTAMP" value="${DSTAMP}" />
 			</manifest>
 			<fileset dir="bin" />
 			<zipgroupfileset dir="target/dependency" includes="**/*.jar" />

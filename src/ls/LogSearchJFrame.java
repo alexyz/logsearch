@@ -4,16 +4,13 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.channels.FileChannel;
 import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.jar.Attributes;
-import java.util.jar.Manifest;
 import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
 
@@ -23,6 +20,8 @@ import javax.swing.filechooser.FileFilter;
 import static ls.LogSearchUtil.*;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
+	
+	public static final String TITLE = "LogSearch 2016-02-18";
 
 	private static final SimpleDateFormat DF = new SimpleDateFormat("yyyy-MM-dd");
 	private static final String STARTDATE_PREF = "startdate";
@@ -39,25 +38,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private static final String DIS_DIR_PREF = "disdir";
 	private static final String REGEX_PREF = "regex";
 	
-	private static String getDateStamp() {
-		ClassLoader cl = ClassLoader.getSystemClassLoader();
-		if (cl instanceof URLClassLoader) {
-			URLClassLoader ucl = (URLClassLoader) cl;
-			URL url = ucl.findResource("META-INF/MANIFEST.MF");
-			try {
-				Manifest manifest = new Manifest(url.openStream());
-				Attributes attributes = manifest.getMainAttributes();
-				String dateStamp = attributes.getValue("DSTAMP");
-				if (dateStamp != null) {
-					return dateStamp;
-				}
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-		}
-		return "";
-	}
-
 	public static void main (final String[] args) {
 		try {
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
@@ -83,6 +63,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JButton editorButton = new JButton("Editor...");
 	private final JLabel editorLabel = new JLabel();
 	private final JButton previewButton = new JButton("Preview");
+	private final JButton previewAllButton = new JButton("Preview All");
 	private final JToggleButton showAllButton = new JToggleButton("Show Unmatched");
 	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
 	private final JRadioButton dateRadioButton = new JRadioButton("Date Range");
@@ -94,7 +75,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
 	private final JButton viewButton = new JButton("View");
-	private final String dateStamp;
 	
 	private volatile SearchThread searchThread;
 
@@ -107,7 +87,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		initListeners();
 		loadPrefs();
 		updateTitle(null);
-		dateStamp = getDateStamp();
 	}
 
 	private void loadPrefs () {
@@ -254,7 +233,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			public void actionPerformed (final ActionEvent ae) {
 				preview();
 			}
-
+		});
+		
+		previewAllButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed (final ActionEvent ae) {
+				previewAll();
+			}
 		});
 
 		table.addMouseListener(new MouseAdapter() {
@@ -332,6 +317,32 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
 				}
 				final TextJDialog d = new TextJDialog(this, "Preview " + result.name);
+				d.setTextFont(new Font("monospaced", 0, 12));
+				d.setText(sb.toString());
+				String text = searchField.getText();
+				if (!regexCheckBox.isSelected()) {
+					text = Pattern.quote(text);
+				}
+				final int f = ignoreCaseBox.isSelected() ? Pattern.CASE_INSENSITIVE : 0;
+				final Pattern p = Pattern.compile(text, f);
+				d.setHighlight(p, Color.orange);
+				d.setVisible(true);
+			}
+		}
+	}
+	
+	private void previewAll () {
+		System.out.println("preview all");
+		final StringBuffer sb = new StringBuffer();
+		for (Result result : tableModel.getResults()) {
+			if (result.lines.size() > 0) {
+				sb.append("\n");
+				sb.append(result.name() + "\n");
+				sb.append("\n");
+				for (final Map.Entry<Integer,String> e : result.lines.entrySet()) {
+					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
+				}
+				final TextJDialog d = new TextJDialog(this, "Preview All");
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
 				String text = searchField.getText();
@@ -466,25 +477,22 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		bg.add(ageRadioButton);
 
 		final JPanel northPanel = new JPanel(new FlowLayout2());
-		northPanel.add(panel(dirLabel, dirButton));
-		northPanel.add(panel(new JLabel("Filename Contains"), nameField));
+		northPanel.add(inlineFlowPanel(dirLabel, dirButton));
+		northPanel.add(inlineFlowPanel(new JLabel("Filename Contains"), nameField));
 		northPanel.add(parseDateBox);
-		northPanel.add(panel(new JLabel("Line Contains"), searchField, regexCheckBox, ignoreCaseBox));
-		northPanel.add(panel(dateRadioButton, startDateSpinner, new JLabel("-"), endDateSpinner, ageRadioButton, ageSpinner));
-		northPanel.add(panel(new JLabel("Context Lines"), contextSpinner));
-		northPanel.add(panel(startButton, stopButton));
+		northPanel.add(inlineFlowPanel(new JLabel("Line Contains"), searchField, regexCheckBox, ignoreCaseBox));
+		northPanel.add(inlineFlowPanel(dateRadioButton, startDateSpinner, new JLabel("-"), endDateSpinner, ageRadioButton, ageSpinner));
+		northPanel.add(inlineFlowPanel(new JLabel("Context Lines"), contextSpinner));
+		northPanel.add(inlineFlowPanel(startButton, stopButton));
 
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
 		table.getColumnModel().getColumn(1).setPreferredWidth(400);
 		table.getColumnModel().getColumn(2).setPreferredWidth(200);
 		final JScrollPane tableScroller = new JScrollPane(table);
 
-		final JPanel southPanel = new JPanel();
-		southPanel.add(showAllButton);
-		southPanel.add(previewButton);
-		southPanel.add(viewButton);
-		southPanel.add(panel(editorLabel, editorButton));
-		southPanel.add(openButton);
+		final JPanel southPanel = new JPanel(new GridLayout(2, 1));
+		southPanel.add(flowPanel(showAllButton, previewButton, previewAllButton));
+		southPanel.add(flowPanel(viewButton, inlineFlowPanel(editorLabel, editorButton), openButton));
 
 		final JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(northPanel, BorderLayout.NORTH);
@@ -496,7 +504,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 	
 	private void updateTitle(String msg) {
-		String t = "LogSearch" + dateStamp;
+		String t = TITLE;
 		if (msg != null && msg.length() > 0) {
 			t += " [" + msg + "]";
 		}
