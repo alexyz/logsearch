@@ -9,10 +9,12 @@ import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.apache.commons.compress.archivers.zip.ZipMethod;
 import org.apache.commons.io.input.CountingInputStream;
 
+import static ls.LogSearchUtil.*;
+
 public class SearchThread extends Thread {
 
 	private static final int MAX_MATCHES = 1000;
-	
+
 	private static void sleep () {
 		String s = System.getProperty("ls.slow");
 		if (s != null && s.length() > 0) {
@@ -25,7 +27,7 @@ public class SearchThread extends Thread {
 	}
 
 	public volatile boolean running;
-	
+
 	private final List<Result> results = new ArrayList<>();
 	private final Map<File,ZipFile> zipFiles = new TreeMap<>();
 	private final SearchListener listener;
@@ -38,8 +40,8 @@ public class SearchThread extends Thread {
 	private final int contextLines;
 	private final FileDater dateParser;
 	private final Pattern pattern;
-	
-	private long bytes;
+
+	private long totalCount;
 
 	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String filename, String text, boolean regex, boolean ignoreCase, int contextLines, FileDater dateParser) {
 		super("SearchThread");
@@ -56,7 +58,7 @@ public class SearchThread extends Thread {
 		this.text = ignoreCase ? text.toUpperCase() : text;
 		this.pattern = regex && text.length() > 0 ? Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
 	}
-	
+
 	@Override
 	public void run () {
 		try {
@@ -74,13 +76,13 @@ public class SearchThread extends Thread {
 			scan();
 			long tns = System.nanoTime() - t;
 			double ts = tns / 1_000_000_000.0;
-			double mb = bytes / 1_000_000.0;
+			double mb = totalCount / 1_000_000.0;
 			listener.searchComplete(String.format("Files: %d  Megabytes: %.1f  Seconds: %.1f  MB/s: %.1f", results.size(), mb, ts, (mb/ts)));
-			
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			listener.searchComplete(e.toString());
-			
+
 		} finally {
 			for (ZipFile zf : zipFiles.values()) {
 				ZipFile.closeQuietly(zf);
@@ -92,11 +94,11 @@ public class SearchThread extends Thread {
 	private boolean testName (String name) {
 		return name.toLowerCase().contains(this.filenameLower);
 	}
-	
+
 	private boolean testDate (Date date) {
 		return date != null && (startDate == null || date.compareTo(startDate) >= 0) && (endDate == null || date.compareTo(endDate) < 0);
 	}
-	
+
 	private void findDir (File dir) {
 		for (File file : dir.listFiles()) {
 			if (!running) {
@@ -106,15 +108,15 @@ public class SearchThread extends Thread {
 				if (file.isFile()) {
 					if (file.getName().toLowerCase().endsWith(".zip")) {
 						findZip(file);
-						
+
 					} else {
 						findFile(file);
 					}
-					
+
 				} else if (file.isDirectory()) {
 					findDir(file);
 				}
-				
+
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -129,14 +131,14 @@ public class SearchThread extends Thread {
 			}
 		}
 	}
-	
+
 	private void findZip (final File file) throws Exception {
 		System.out.println("find zip " + file);
-		
+
 		// don't close until scan finished
 		ZipFile zf = new ZipFile(file);
 		boolean hasResult = false;
-		
+
 		Enumeration<ZipArchiveEntry> e = zf.getEntries();
 		while (running && e.hasMoreElements()) {
 			ZipArchiveEntry ze = e.nextElement();
@@ -144,7 +146,7 @@ public class SearchThread extends Thread {
 			if (name.contains("/")) {
 				name = name.substring(name.lastIndexOf("/") + 1);
 			}
-			
+
 			if (testName(name)) {
 				Date date = dateParser.getFileDate(ze.getTime(), name);
 				if (testDate(date)) {
@@ -153,10 +155,10 @@ public class SearchThread extends Thread {
 				}
 			}
 		}
-		
+
 		if (hasResult) {
 			zipFiles.put(file, zf);
-			
+
 		} else {
 			ZipFile.closeQuietly(zf);
 		}
@@ -164,11 +166,11 @@ public class SearchThread extends Thread {
 
 	private void scan () {
 		System.out.println("scan");
-		
+
 		for (int n = 0; running && n < results.size(); n++) {
 			listener.searchUpdate("scanning " + (n + 1) + " of " + results.size());
 			Result result = results.get(n);
-			
+
 			try {
 				// only scan if required
 				if (text.length() > 0) {
@@ -185,7 +187,7 @@ public class SearchThread extends Thread {
 						} else {
 							result.matches = "Cannot read " + ZipMethod.getMethodByCode(zae.getMethod());
 						}
-						
+
 					} else {
 						try (InputStream is = new FileInputStream(result.file)) {
 							int i = scanInputStream(result, result.file.getName(), is);
@@ -195,77 +197,76 @@ public class SearchThread extends Thread {
 						}
 					}
 				}
-				
+
 				listener.searchResult(result);
-				
+
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-			
+
 			sleep();
 		}
 	}
-	
+
 	private int scanInputStream (final Result result, String name, InputStream is) throws Exception {
 		System.out.println("scan " + name);
-		
-		try (InputStream is2 = LogSearchUtil.toInputStream(name, new BufferedInputStream(is))) {
+
+		try (InputStream is2 = uncompressedInputStream(name, new BufferedInputStream(is))) {
 			return scanInputStream2(result, is2);
-			
 		} finally {
 			System.gc();
 		}
 	}
-	
+
 	private int scanInputStream2 (final Result result, final InputStream is) throws Exception {
 		final List<String> backward = new ArrayList<>();
 		int forward = 0;
 		int matches = 0;
-		
-		try (CountingInputStream cis = new CountingInputStream(is)) {
-			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis))) {
-				int lineno = 1;
-				String line;
-				long offset = cis.getByteCount();
-				
-				while (running && (line = br.readLine()) != null) {
-					if (forward > 0) {
-						result.lines.put(lineno, line);
-						forward--;
-					}
-					
-					if (testLine(line)) {
-						matches++;
-						result.offsets.add(offset);
-						for (int n = 0; n < backward.size(); n++) {
-							// backward = [l-3] [l-2] [l-1]
-							result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
-						}
-						result.lines.put(lineno, line);
-						forward = contextLines;
-					}
-					
-					if (contextLines > 0) {
-						if (backward.size() >= contextLines) {
-							backward.remove(0);
-						}
-						backward.add(line);
-					}
-					
-					if (matches >= MAX_MATCHES) {
-						System.out.println("too many matches");
-						break;
-					}
-					
-					lineno++;
+
+		LineCountingInputStream lcis;
+		try (BufferedReader br = new BufferedReader(new InputStreamReader(lcis = new LineCountingInputStream(is)))) {
+			int lineno = 1;
+			String line;
+
+			while (running && (line = br.readLine()) != null) {
+				if (forward > 0) {
+					result.lines.put(lineno, line);
+					forward--;
 				}
+
+				if (testLine(line)) {
+					matches++;
+					result.offsets.add(lcis.lines.get(lineno - 1));
+					for (int n = 0; n < backward.size(); n++) {
+						// backward = [l-3] [l-2] [l-1]
+						result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
+					}
+					result.lines.put(lineno, line);
+					forward = contextLines;
+				}
+
+				if (contextLines > 0) {
+					if (backward.size() >= contextLines) {
+						backward.remove(0);
+					}
+					backward.add(line);
+				}
+
+				if (matches >= MAX_MATCHES) {
+					System.out.println("too many matches");
+					break;
+				}
+
+				lineno++;
 			}
-			bytes += cis.getByteCount();
 		}
 		
+		result.size = lcis.count;
+		totalCount += lcis.count;
+
 		return matches;
 	}
-	
+
 	private boolean testLine (String line) {
 		if (pattern != null) {
 			return pattern.matcher(line).find();
@@ -274,5 +275,5 @@ public class SearchThread extends Thread {
 			return lineUpper.contains(text);
 		}
 	}
-	
+
 }

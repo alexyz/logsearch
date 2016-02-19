@@ -2,10 +2,7 @@ package ls;
 
 import java.awt.FlowLayout;
 import java.io.*;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Map;
-import java.util.StringTokenizer;
+import java.util.*;
 
 import javax.swing.JComponent;
 import javax.swing.JPanel;
@@ -16,10 +13,14 @@ import org.apache.commons.compress.compressors.CompressorStreamFactory;
 import org.apache.commons.compress.compressors.bzip2.BZip2Utils;
 import org.apache.commons.compress.compressors.gzip.GzipUtils;
 import org.apache.commons.compress.compressors.xz.XZUtils;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 
 public class LogSearchUtil {
+
 	private static final String OPEN = "/usr/bin/open";
+
+	private static Map<Object, File> TEMP_FILES = new TreeMap<>();
 
 	public static void execOpen (File editor, File file, int lineno) throws Exception {
 		String[] args;
@@ -33,13 +34,13 @@ public class LogSearchUtil {
 		System.out.println("exec " + Arrays.toString(args));
 		Runtime.getRuntime().exec(args);
 	}
-	
+
 	public static boolean isCompressed (String name) {
 		return GzipUtils.isCompressedFilename(name) || BZip2Utils.isCompressedFilename(name) || XZUtils.isCompressedFilename(name);
 	}
-	
+
 	/** decompress if compressed, otherwise return same input stream */
-	public static InputStream toInputStream (String name, BufferedInputStream is) throws Exception {
+	public static InputStream uncompressedInputStream (String name, BufferedInputStream is) throws Exception {
 		if (isCompressed(name)) {
 			CompressorStreamFactory f = new CompressorStreamFactory(true);
 			return f.createCompressorInputStream(is);
@@ -49,42 +50,74 @@ public class LogSearchUtil {
 	}
 	
 	/**
-	 * get uncompressed file for result
+	 * get uncompressed file for result (cached)
 	 */
-	public static File toFile(final Result result) throws Exception {
-		// FIXME need to cache the temp files
+	public static File toTempFile (final Result result) throws Exception {
+		File file;
 		if (result.entry != null) {
-			try (ZipFile zf = new ZipFile(result.file)) {
-				ZipArchiveEntry ze = zf.getEntry(result.entry);
-				try (InputStream is = toInputStream(result.entry, new BufferedInputStream(zf.getInputStream(ze)))) {
-					return createTempFile(result.file.getName() + "." + ze.getName(), is);
-				}
+			file = TEMP_FILES.get(result.key());
+			if (file == null) {
+				TEMP_FILES.put(result.key(), file = entryToFile(result, createTempFile(result)));
 			}
 		} else if (isCompressed(result.file.getName())) {
-			try (InputStream is = toInputStream(result.file.getName(), new BufferedInputStream(new FileInputStream(result.file)))) {
-				return createTempFile(result.file.getName(), is);
+			file = TEMP_FILES.get(result.key());
+			if (file == null) {
+				TEMP_FILES.put(result.key(), file = decompressToFile(result, createTempFile(result)));
 			}
 		} else {
-			return result.file;
+			file = result.file;
+		}
+		return file;
+	}
+
+	/**
+	 * get uncompressed file for result
+	 */
+	public static void toFile (final Result result, final File destFile) throws Exception {
+		if (result.entry != null) {
+			entryToFile(result, destFile);
+		} else if (isCompressed(result.file.getName())) {
+			decompressToFile(result, destFile);
+		} else {
+			FileUtils.copyFile(result.file, destFile);
 		}
 	}
-	
-	public static File createTempFile (String tmpname, InputStream is) throws Exception {
-		File file = File.createTempFile(tmpname + ".", null);
+
+	private static File decompressToFile (final Result result, final File destFile) throws Exception {
+		try (InputStream is = uncompressedInputStream(result.file.getName(), new BufferedInputStream(new FileInputStream(result.file)))) {
+			return writeFile(destFile, is);
+		}
+	}
+
+	private static File entryToFile (Result result, File destFile) throws Exception {
+		try (ZipFile zf = new ZipFile(result.file)) {
+			ZipArchiveEntry ze = zf.getEntry(result.entry);
+			try (InputStream is = uncompressedInputStream(result.entry, new BufferedInputStream(zf.getInputStream(ze)))) {
+				return writeFile(destFile, is);
+			}
+		}
+	}
+
+	public static File createTempFile (Result result) throws Exception {
+		File file = File.createTempFile(result.tempName(), null);
 		file.deleteOnExit();
+		return file;
+	}
+
+	public static File writeFile (File file, InputStream is) throws Exception {
 		try (OutputStream os = new BufferedOutputStream(new FileOutputStream(file))) {
 			IOUtils.copy(is, os);
 		}
 		return file;
 	}
-	
+
 	public static File defaultEditor () {
 		String os = System.getProperty("os.name").toLowerCase();
 		File f = null;
-		
+
 		if (os.startsWith("mac os x")) {
 			f = new File(OPEN);
-			
+
 		} else if (os.startsWith("windows")) {
 			Map<String, String> env = System.getenv();
 			String pf86 = env.get("ProgramFiles(x86)");
@@ -97,11 +130,11 @@ public class LogSearchUtil {
 				f = new File(windir + "\\system32\\notepad.exe");
 			}
 		}
-		
+
 		if (f != null && !f.exists()) {
 			f = null;
 		}
-		
+
 		return f;
 	}
 
@@ -125,8 +158,8 @@ public class LogSearchUtil {
 		}
 		return dirSb.toString();
 	}
-	
-	public static JPanel inlineFlowPanel(JComponent... comps) {
+
+	public static JPanel inlineFlowPanel (JComponent... comps) {
 		FlowLayout fl = new FlowLayout();
 		fl.setVgap(0);
 		JPanel p = new JPanel(fl);
@@ -135,16 +168,16 @@ public class LogSearchUtil {
 		}
 		return p;
 	}
-	
-	public static JPanel flowPanel(JComponent... comps) {
+
+	public static JPanel flowPanel (JComponent... comps) {
 		JPanel p = new JPanel();
 		for (JComponent c : comps) {
 			p.add(c);
 		}
 		return p;
 	}
-	
-	private LogSearchUtil () {
+
+	private LogSearchUtil() {
 		//
 	}
 }
