@@ -47,7 +47,7 @@ public class ResultTableModel extends AbstractTableModel {
 	
 	@Override
 	public int getColumnCount () {
-		return 3;
+		return 4;
 	}
 	
 	public int getRow (Result r) {
@@ -68,6 +68,8 @@ public class ResultTableModel extends AbstractTableModel {
 			case 1:
 				return "Name";
 			case 2:
+				return "Size";
+			case 3:
 				return "Matches";
 		}
 		return null;
@@ -92,6 +94,8 @@ public class ResultTableModel extends AbstractTableModel {
 			case 1:
 				return r.name();
 			case 2:
+				return r.size;
+			case 3:
 				return r.matches != null ? r.matches : "";
 			default:
 				return null;

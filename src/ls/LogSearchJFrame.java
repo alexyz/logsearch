@@ -20,7 +20,7 @@ import javax.swing.filechooser.FileFilter;
 import static ls.LogSearchUtil.*;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
-	
+
 	public static final String TITLE = "LogSearch 2016-02-18";
 
 	private static final SimpleDateFormat DF = new SimpleDateFormat("yyyy-MM-dd");
@@ -37,7 +37,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private static final String DIR_PREF = "dir";
 	private static final String DIS_DIR_PREF = "disdir";
 	private static final String REGEX_PREF = "regex";
-	
+
 	public static void main (final String[] args) {
 		try {
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
@@ -58,6 +58,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JButton startButton = new JButton("Start");
 	private final JButton stopButton = new JButton("Stop");
 	private final JButton openButton = new JButton("Open");
+	private final JButton saveButton = new JButton("Save");
 	private final ResultTableModel tableModel = new ResultTableModel();
 	private final JTable table = new ResultsJTable(tableModel);
 	private final JButton editorButton = new JButton("Editor...");
@@ -75,7 +76,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
 	private final JButton viewButton = new JButton("View");
-	
+
 	private volatile SearchThread searchThread;
 
 	private File editor;
@@ -218,14 +219,15 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		openButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
-				try {
-					open();
-				} catch (final Exception e) {
-					e.printStackTrace();
-					JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "Open", JOptionPane.ERROR_MESSAGE);
-				}
+				open();
 			}
+		});
 
+		saveButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed (final ActionEvent ae) {
+				save();
+			}
 		});
 
 		previewButton.addActionListener(new ActionListener() {
@@ -234,7 +236,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				preview();
 			}
 		});
-		
+
 		previewAllButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
@@ -278,7 +280,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 		dateRadioButton.addItemListener(radioButtonListener);
 		ageRadioButton.addItemListener(radioButtonListener);
-		
+
 		viewButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -286,18 +288,15 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		});
 	}
-	
+
 	private void view() {
 		System.out.println("view");
 		final int r = table.getSelectedRow();
 		if (r >= 0) {
 			final Result result = tableModel.getResult(r);
 			try {
-				File file = toFile(result);
-				try (FileChannel fc = FileChannel.open(file.toPath(), StandardOpenOption.READ)) {
-					ViewJFrame dialog = new ViewJFrame(this, result);
-					dialog.setVisible(true);
-				}
+				ViewJFrame dialog = new ViewJFrame(this, result, pattern());
+				dialog.setVisible(true);
 			} catch (Exception e) {
 				e.printStackTrace();
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "View", JOptionPane.ERROR_MESSAGE);
@@ -319,18 +318,23 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				final TextJDialog d = new TextJDialog(this, "Preview " + result.name);
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
-				String text = searchField.getText();
-				if (!regexCheckBox.isSelected()) {
-					text = Pattern.quote(text);
-				}
-				final int f = ignoreCaseBox.isSelected() ? Pattern.CASE_INSENSITIVE : 0;
-				final Pattern p = Pattern.compile(text, f);
+				final Pattern p = pattern();
 				d.setHighlight(p, Color.orange);
 				d.setVisible(true);
 			}
 		}
 	}
-	
+
+	private Pattern pattern () {
+		String text = searchField.getText();
+		if (!regexCheckBox.isSelected()) {
+			text = Pattern.quote(text);
+		}
+		final int f = ignoreCaseBox.isSelected() ? Pattern.CASE_INSENSITIVE : 0;
+		final Pattern p = Pattern.compile(text, f);
+		return p;
+	}
+
 	private void previewAll () {
 		System.out.println("preview all");
 		final StringBuffer sb = new StringBuffer();
@@ -345,118 +349,140 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				final TextJDialog d = new TextJDialog(this, "Preview All");
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
-				String text = searchField.getText();
-				if (!regexCheckBox.isSelected()) {
-					text = Pattern.quote(text);
-				}
-				final int f = ignoreCaseBox.isSelected() ? Pattern.CASE_INSENSITIVE : 0;
-				final Pattern p = Pattern.compile(text, f);
+				final Pattern p = pattern();
 				d.setHighlight(p, Color.orange);
 				d.setVisible(true);
 			}
 		}
 	}
 
-	private void open () throws Exception {
-		System.out.println("open");
-		
-		if (editor == null) {
-			throw new Exception("no editor");
-		}
-		
-		final int r = table.getSelectedRow();
-		if (r >= 0) {
-			final Result result = tableModel.getResult(r);
-			File file = toFile(result);
-
-			int lineno = 0;
-			if (result.lines.size() > 0) {
-				lineno = result.lines.keySet().iterator().next();
+	private void save () {
+		try {
+			System.out.println("save");
+			final int r = table.getSelectedRow();
+			if (r >= 0) {
+				final Result result = tableModel.getResult(r);
+				JFileChooser fc = new JFileChooser();
+				fc.setSelectedFile(new File(result.tempName()));
+				if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+					toFile(result, fc.getSelectedFile());
+				}
 			}
-			execOpen(editor, file, lineno);
+		} catch (final Exception e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "Save", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	private void open () {
+		try {
+			System.out.println("open");
+			if (editor == null) {
+				throw new Exception("no editor selected");
+			}
+			final int r = table.getSelectedRow();
+			if (r >= 0) {
+				final Result result = tableModel.getResult(r);
+				File file = toTempFile(result);
+
+				int lineno = 0;
+				if (result.lines.size() > 0) {
+					lineno = result.lines.keySet().iterator().next();
+				}
+				execOpen(editor, file, lineno);
+			}
+		} catch (final Exception e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, e.toString(), "Open", JOptionPane.ERROR_MESSAGE);
 		}
 	}
 
 	private void search () throws Exception {
-		System.out.println(SEARCH_PREF);
+		try {
+			System.out.println("search");
 
-		if (searchThread != null) {
-			throw new Exception("Already running");
-		}
-
-		if (dirs.size() == 0) {
-			throw new Exception("No directories chosen");
-		}
-
-		tableModel.clear();
-
-		final String text = searchField.getText();
-
-		// sort with highest dirs first
-		final List<File> sortedDirs = new ArrayList<>(dirs);
-		Collections.sort(sortedDirs, new Comparator<File>() {
-			@Override
-			public int compare (final File o1, final File o2) {
-				return o1.getAbsolutePath().length() - o2.getAbsolutePath().length();
+			if (searchThread != null) {
+				throw new Exception("Already running");
 			}
-		});
 
-		final TreeSet<File> searchDirs = new TreeSet<>();
-		for (final File dir : sortedDirs) {
-			final String dirStr = dir.getAbsolutePath() + File.separator;
-			boolean add = true;
-			for (final File searchDir : searchDirs) {
-				final String searchDirStr = searchDir.getAbsolutePath() + File.separator;
-				// is this directory already included
-				if (dirStr.startsWith(searchDirStr)) {
-					System.out.println("exclude dir " + dir + " due to below " + searchDir);
-					add = false;
-					break;
+			if (dirs.size() == 0) {
+				throw new Exception("No directories chosen");
+			}
+
+			tableModel.clear();
+
+			final String text = searchField.getText();
+
+			// sort with highest dirs first
+			final List<File> sortedDirs = new ArrayList<>(dirs);
+			Collections.sort(sortedDirs, new Comparator<File>() {
+				@Override
+				public int compare (final File o1, final File o2) {
+					return o1.getAbsolutePath().length() - o2.getAbsolutePath().length();
+				}
+			});
+
+			final TreeSet<File> searchDirs = new TreeSet<>();
+			for (final File dir : sortedDirs) {
+				final String dirStr = dir.getAbsolutePath() + File.separator;
+				boolean add = true;
+				for (final File searchDir : searchDirs) {
+					final String searchDirStr = searchDir.getAbsolutePath() + File.separator;
+					// is this directory already included
+					if (dirStr.startsWith(searchDirStr)) {
+						System.out.println("exclude dir " + dir + " due to below " + searchDir);
+						add = false;
+						break;
+					}
+				}
+				if (add) {
+					searchDirs.add(dir);
 				}
 			}
-			if (add) {
-				searchDirs.add(dir);
+			System.out.println("dirs to search: " + searchDirs);
+
+			final Date startDate;
+			final Date endDate;
+
+			if (dateRadioButton.isSelected()) {
+				startDate = (Date) startDateSpinner.getValue();
+				long msInDay = 1000 * 60 * 60 * 24;
+				Date endDateInclusive = (Date) endDateSpinner.getValue();
+				endDate = new Date(endDateInclusive.getTime() + msInDay);
+
+			} else {
+				final Calendar cal = new GregorianCalendar();
+				cal.add(Calendar.DATE, -(int)ageSpinner.getValue());
+				startDate = cal.getTime();
+				endDate = new Date();
 			}
-		}
-		System.out.println("dirs to search: " + searchDirs);
 
-		final Date startDate;
-		final Date endDate;
-		
-		if (dateRadioButton.isSelected()) {
-			startDate = (Date) startDateSpinner.getValue();
-			long msInDay = 1000 * 60 * 60 * 24;
-			Date endDateInclusive = (Date) endDateSpinner.getValue();
-			endDate = new Date(endDateInclusive.getTime() + msInDay);
+			if (startDate.compareTo(endDate) >= 0) {
+				throw new Exception("Start date equal to or after end date");
+			}
+
+			final String name = nameField.getText();
+			if (name.length() == 0) {
+				throw new Exception("No file name filter");
+			}
+
+			final boolean ignoreCase = ignoreCaseBox.isSelected();
+
+			final boolean regex = regexCheckBox.isSelected();
+
+			final int context = (int) contextSpinner.getValue();
+
+			final FileDater fd = new FileDater(parseDateBox.isSelected());
+
+			savePrefs();
+
+			searchThread = new SearchThread(this, searchDirs, startDate, endDate, name, text, regex, ignoreCase, context, fd);
+			searchThread.start();
 			
-		} else {
-			final Calendar cal = new GregorianCalendar();
-			cal.add(Calendar.DATE, -(int)ageSpinner.getValue());
-			startDate = cal.getTime();
-			endDate = new Date();
+		} catch (final Exception e) {
+			e.printStackTrace();
+			JOptionPane.showMessageDialog(this, e.toString(), "Search", JOptionPane.ERROR_MESSAGE);
 		}
-		
-		if (startDate.compareTo(endDate) >= 0) {
-			throw new Exception("Start date equal to or after end date");
-		}
-		
-		final String name = nameField.getText();
-		if (name.length() == 0) {
-			throw new Exception("No file name filter");
-		}
-
-		final boolean ignoreCase = ignoreCaseBox.isSelected();
-
-		final boolean regex = regexCheckBox.isSelected();
-
-		final int context = (int) contextSpinner.getValue();
-
-		final FileDater fd = new FileDater(parseDateBox.isSelected());
-
-		savePrefs();
-
-		searchThread = new SearchThread(this, searchDirs, startDate, endDate, name, text, regex, ignoreCase, context, fd);
-		searchThread.start();
 	}
 
 	private void initComponents () {
@@ -488,11 +514,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
 		table.getColumnModel().getColumn(1).setPreferredWidth(400);
 		table.getColumnModel().getColumn(2).setPreferredWidth(200);
+		table.getColumnModel().getColumn(3).setPreferredWidth(200);
 		final JScrollPane tableScroller = new JScrollPane(table);
 
 		final JPanel southPanel = new JPanel(new GridLayout(2, 1));
 		southPanel.add(flowPanel(showAllButton, previewButton, previewAllButton));
-		southPanel.add(flowPanel(viewButton, inlineFlowPanel(editorLabel, editorButton), openButton));
+		southPanel.add(flowPanel(viewButton, inlineFlowPanel(editorLabel, editorButton), openButton, saveButton));
 
 		final JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(northPanel, BorderLayout.NORTH);
@@ -502,7 +529,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		setContentPane(contentPanel);
 		pack();
 	}
-	
+
 	private void updateTitle(String msg) {
 		String t = TITLE;
 		if (msg != null && msg.length() > 0) {
