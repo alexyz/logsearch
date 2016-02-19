@@ -5,4 +5,4 @@ dist
 *.zip
 target
 .settings
-*.log
+log
