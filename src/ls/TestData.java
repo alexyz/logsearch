@@ -2,6 +2,7 @@ package ls;
 
 import java.io.*;
 import java.util.Random;
+import java.util.zip.GZIPOutputStream;
 
 import org.apache.commons.compress.archivers.zip.*;
 
@@ -26,7 +27,9 @@ public class TestData {
 		    write(pw);
 		    zos.closeArchiveEntry();
 		}
-		// TODO generate some zips/gz etc
+		try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(new File("logs/server.log.3.gz")))))) {
+			write(pw);
+		}
 	}
 
 	private static void write (PrintWriter pw) {

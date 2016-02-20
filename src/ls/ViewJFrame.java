@@ -1,5 +1,6 @@
 package ls;
 
+import java.awt.Adjustable;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -8,7 +9,7 @@ import java.awt.event.*;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -22,54 +23,55 @@ import javax.swing.text.Highlighter;
 /**
  * view large files
  * cant use custom document/content - still need to scan for lines
- * 
  */
 public class ViewJFrame extends JFrame {
 
 	private final JCheckBox wrapCheckBox = new JCheckBox("Line Wrap");
 	private final JButton okButton = new JButton("OK");
 	private final JTextArea textArea = new JTextArea();
-	private final JScrollPane scroller = new JScrollPane(textArea);
-	private final JScrollBar bar;
-	private final RandomAccessFile raf;
-	private final JSpinner spinner = new JSpinner();
-	private final JComboBox<Long> combo = new JComboBox<>();
+	private final JScrollPane textAreaScroller = new JScrollPane(textArea);
+	private final JScrollBar offsetScrollBar;
+	private final RandomAccessFile randomAccessFile;
+	private final JSpinner offsetSpinner = new JSpinner();
+	private final JComboBox<Long> offsetsCombobox = new JComboBox<>();
 	private final List<Object> highlights = new ArrayList<>();
 	private final Pattern pattern;
+	private final Charset charset;
 
-	public ViewJFrame (final JFrame frame, final Result result, Pattern pattern) throws Exception {
+	public ViewJFrame (final JFrame frame, final Result result, Pattern pattern, Charset charset) throws Exception {
 		super(result.name);
+		this.charset = charset;
 		this.pattern = pattern;
 
 		File file = LogSearchUtil.toTempFile(result);
 
-		raf = new RandomAccessFile(file, "r");
+		randomAccessFile = new RandomAccessFile(file, "r");
 
 		addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosed (WindowEvent e) {
 				try {
-					raf.close();
+					randomAccessFile.close();
 				} catch (IOException e1) {
 					e1.printStackTrace();
 				}
 			}
 		});
 
-		bar = new JScrollBar(JScrollBar.VERTICAL, 0, 1, 0, (int) (raf.length() / 1000));
-		bar.addAdjustmentListener(new AdjustmentListener() {
+		offsetScrollBar = new JScrollBar(Adjustable.VERTICAL, 0, 1, 0, (int) (randomAccessFile.length() / 1000));
+		offsetScrollBar.addAdjustmentListener(new AdjustmentListener() {
 			@Override
 			public void adjustmentValueChanged (AdjustmentEvent e) {
-				spinner.setValue(new Double(e.getValue()) * 1000);
+				offsetSpinner.setValue(new Double(e.getValue()) * 1000);
 				update();
 			}
 		});
 
-		spinner.setModel(new SpinnerNumberModel(0.0, 0, raf.length(), 1));
-		spinner.addChangeListener(new ChangeListener() {
+		offsetSpinner.setModel(new SpinnerNumberModel(0.0, 0, randomAccessFile.length(), 1));
+		offsetSpinner.addChangeListener(new ChangeListener() {
 			@Override
 			public void stateChanged (ChangeEvent e) {
-				bar.setValue((int)((Number)spinner.getValue()).doubleValue()/1000);
+				offsetScrollBar.setValue((int)((Number)offsetSpinner.getValue()).doubleValue()/1000);
 				update();
 			}
 		});
@@ -77,25 +79,20 @@ public class ViewJFrame extends JFrame {
 		Vector<Long> offsets = new Vector<>();
 		offsets.add(new Long(0));
 		offsets.addAll(result.offsets);
-		combo.setModel(new DefaultComboBoxModel<>(offsets));
-		combo.addItemListener(new ItemListener() {
+		
+		offsetsCombobox.setModel(new DefaultComboBoxModel<>(offsets));
+		offsetsCombobox.addItemListener(new ItemListener() {
 			@Override
 			public void itemStateChanged (ItemEvent e) {
 				if (e.getStateChange() == ItemEvent.SELECTED) {
-					spinner.setValue(((Number)e.getItem()).doubleValue());
+					offsetSpinner.setValue(((Number)e.getItem()).doubleValue());
 				}
 			}
 		});
 
 		textArea.setEditable(false);
 		textArea.setFont(new Font("monospaced", 0, 12));
-		textArea.addComponentListener(new ComponentAdapter() {
-			@Override
-			public void componentResized (ComponentEvent e) {
-				update();
-			}
-		});
-
+		
 		wrapCheckBox.addItemListener(new ItemListener() {
 			@Override
 			public void itemStateChanged (ItemEvent e) {
@@ -112,8 +109,8 @@ public class ViewJFrame extends JFrame {
 
 		JPanel topPanel = new JPanel();
 		topPanel.add(new JLabel("Offset"));
-		topPanel.add(spinner);
-		topPanel.add(combo);
+		topPanel.add(offsetSpinner);
+		topPanel.add(offsetsCombobox);
 
 		JPanel buttonPanel = new JPanel();
 		buttonPanel.add(wrapCheckBox);
@@ -121,11 +118,12 @@ public class ViewJFrame extends JFrame {
 
 		JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(topPanel, BorderLayout.NORTH);
-		contentPanel.add(scroller, BorderLayout.CENTER);
+		contentPanel.add(textAreaScroller, BorderLayout.CENTER);
 		contentPanel.add(buttonPanel, BorderLayout.SOUTH);
-		contentPanel.add(bar, BorderLayout.EAST);
-
+		contentPanel.add(offsetScrollBar, BorderLayout.EAST);
+		
 		setContentPane(contentPanel);
+		update();
 		setPreferredSize(new Dimension(640, 480));
 		pack();
 		setLocationRelativeTo(frame);
@@ -134,9 +132,9 @@ public class ViewJFrame extends JFrame {
 	protected void update () {
 		try {
 			byte[] buf = new byte[10000];
-			raf.seek(((Number)spinner.getValue()).longValue()); 
-			raf.read(buf);
-			String text = new String(buf, StandardCharsets.ISO_8859_1);
+			randomAccessFile.seek(((Number)offsetSpinner.getValue()).longValue()); 
+			randomAccessFile.read(buf);
+			String text = new String(buf, charset);
 			textArea.setText(text);
 			textArea.setCaretPosition(0);
 			Highlighter h = textArea.getHighlighter();

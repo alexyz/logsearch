@@ -8,9 +8,9 @@
 	</path>
 
 	<target name="compile" unless="eclipse.pdebuild.home">
-		<delete dir="bin" />
-		<mkdir dir="bin" />
-		<javac classpathref="cp" srcdir="src" destdir="bin" source="1.7" target="1.7" includeAntRuntime="false" />
+		<delete dir="target/classes" />
+		<mkdir dir="target/classes" />
+		<javac classpathref="cp" srcdir="src" destdir="target/classes" source="1.7" target="1.7" includeAntRuntime="false" />
 	</target>
 
 	<target name="jar" depends="compile">
@@ -18,7 +18,7 @@
 			<manifest>
 				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
 			</manifest>
-			<fileset dir="bin" />
+			<fileset dir="target/classes" />
 			<zipgroupfileset dir="target/dependency" includes="**/*.jar" />
 		</jar>
 	</target>

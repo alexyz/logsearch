@@ -37,8 +37,16 @@ public class TextJDialog extends JDialog {
 		okButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				savePrefs();
 				setVisible(false);
+				savePrefs();
+			}
+		});
+		
+		addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosing (WindowEvent e) {
+				System.out.println("text dialog closing");
+				savePrefs();
 			}
 		});
 		

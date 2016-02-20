@@ -18,6 +18,8 @@ import org.apache.commons.io.IOUtils;
 
 public class LogSearchUtil {
 
+	public static final long MS_IN_DAY = 1000 * 60 * 60 * 24;
+	
 	private static final String OPEN = "/usr/bin/open";
 
 	private static Map<Object, File> TEMP_FILES = new TreeMap<>();

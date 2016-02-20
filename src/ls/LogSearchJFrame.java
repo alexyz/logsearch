@@ -7,6 +7,8 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.prefs.Preferences;
@@ -25,7 +27,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private static final String STARTDATE_PREF = "startdate";
 	private static final String ENDDATE_PREF = "enddate";
 	private static final String PARSEDATE_PREF = "parsedate";
-	private static final String CONTEXT_PREF = "context";
+	private static final String CONTEXT_BEFORE_PREF = "contextbefore";
+	private static final String CONTEXT_AFTER_PREF = "contextafter";
 	private static final String CASE_PREF = "case";
 	private static final String START_OR_AGE_PREF = "start";
 	private static final String EDITOR_PREF = "editor";
@@ -70,12 +73,14 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final Set<File> dirs = new TreeSet<>();
 	private final Set<File> disDirs = new TreeSet<>();
 	private final JCheckBox ignoreCaseBox = new JCheckBox("Ignore Case");
-	private final JSpinner contextSpinner = new JSpinner(new SpinnerNumberModel(5, 0, 10, 1));
+	private final JSpinner contextBeforeSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 100, 1));
+	private final JSpinner contextAfterSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 100, 1));
 	private final JCheckBox parseDateBox = new JCheckBox("Date from Filename");
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
 	private final JButton viewButton = new JButton("View");
+	private final JComboBox<ComboItem> charsetBox = new JComboBox<>();
 
-	private volatile SearchThread searchThread;
+	private volatile SearchThread thread;
 
 	private File editor;
 
@@ -104,7 +109,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		dateRadioButton.setSelected(prefs.getBoolean(START_OR_AGE_PREF, true));
 		ageRadioButton.setSelected(!dateRadioButton.isSelected());
 		ignoreCaseBox.setSelected(prefs.getBoolean(CASE_PREF, false));
-		contextSpinner.setValue(prefs.getInt(CONTEXT_PREF, 2));
+		contextBeforeSpinner.setValue(prefs.getInt(CONTEXT_BEFORE_PREF, 1));
+		contextAfterSpinner.setValue(prefs.getInt(CONTEXT_AFTER_PREF, 1));
 		parseDateBox.setSelected(prefs.getBoolean(PARSEDATE_PREF, true));
 		regexCheckBox.setSelected(prefs.getBoolean(REGEX_PREF, false));
 
@@ -127,7 +133,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
 		prefs.putBoolean(START_OR_AGE_PREF, dateRadioButton.isSelected());
 		prefs.putBoolean(CASE_PREF, ignoreCaseBox.isSelected());
-		prefs.putInt(CONTEXT_PREF, (int) contextSpinner.getValue());
+		prefs.putInt(CONTEXT_BEFORE_PREF, (int) contextBeforeSpinner.getValue());
+		prefs.putInt(CONTEXT_AFTER_PREF, (int) contextAfterSpinner.getValue());
 		prefs.putBoolean(PARSEDATE_PREF, parseDateBox.isSelected());
 		prefs.putLong(STARTDATE_PREF, ((Date)startDateSpinner.getValue()).getTime());
 		prefs.putLong(ENDDATE_PREF, ((Date)endDateSpinner.getValue()).getTime());
@@ -143,7 +150,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing (final WindowEvent e) {
-				System.out.println("window closing");
+				System.out.println("log search closing");
 				savePrefs();
 			}
 		});
@@ -208,8 +215,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		stopButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent e) {
-				if (searchThread != null) {
-					searchThread.running = false;
+				if (thread != null) {
+					thread.running = false;
 				}
 			}
 		});
@@ -293,7 +300,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		if (r >= 0) {
 			final Result result = tableModel.getResult(r);
 			try {
-				ViewJFrame dialog = new ViewJFrame(this, result, pattern());
+				ViewJFrame dialog = new ViewJFrame(this, result, pattern(), charset());
 				dialog.setVisible(true);
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -302,6 +309,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		}
 	}
 
+	private Charset charset() {
+		return (Charset) ((ComboItem)charsetBox.getSelectedItem()).object;
+	}
 
 	private void preview () {
 		System.out.println("preview");
@@ -310,14 +320,19 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			final Result result = tableModel.getResult(row);
 			if (result.lines.size() > 0) {
 				final StringBuffer sb = new StringBuffer();
+				int prevLine = 0;
 				for (final Map.Entry<Integer,String> e : result.lines.entrySet()) {
-					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
+					int line = e.getKey();
+					if (line > prevLine + 1) {
+						sb.append("\n");
+					}
+					sb.append("Line ").append(line).append(": ").append(e.getValue()).append("\n");
+					prevLine = line;
 				}
 				final TextJDialog d = new TextJDialog(this, "Preview " + result.name);
 				d.setTextFont(new Font("monospaced", 0, 12));
 				d.setText(sb.toString());
-				final Pattern p = pattern();
-				d.setHighlight(p, Color.orange);
+				d.setHighlight(pattern(), Color.orange);
 				d.setVisible(true);
 			}
 		}
@@ -344,14 +359,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				for (final Map.Entry<Integer,String> e : result.lines.entrySet()) {
 					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
 				}
-				final TextJDialog d = new TextJDialog(this, "Preview All");
-				d.setTextFont(new Font("monospaced", 0, 12));
-				d.setText(sb.toString());
-				final Pattern p = pattern();
-				d.setHighlight(p, Color.orange);
-				d.setVisible(true);
 			}
 		}
+		final TextJDialog d = new TextJDialog(this, "Preview All");
+		d.setTextFont(new Font("monospaced", 0, 12));
+		d.setText(sb.toString());
+		d.setHighlight(pattern(), Color.orange);
+		d.setVisible(true);
 	}
 
 	private void save () {
@@ -399,7 +413,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		try {
 			System.out.println("search");
 
-			if (searchThread != null) {
+			if (thread != null) {
 				throw new Exception("Already running");
 			}
 
@@ -408,8 +422,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 
 			tableModel.clear();
-
-			final String text = searchField.getText();
 
 			// sort with highest dirs first
 			final List<File> sortedDirs = new ArrayList<>(dirs);
@@ -437,45 +449,29 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 					searchDirs.add(dir);
 				}
 			}
+			
 			System.out.println("dirs to search: " + searchDirs);
-
-			final Date startDate;
-			final Date endDate;
-
+			
+			thread = new SearchThread(this);
+			thread.dirs = searchDirs;
 			if (dateRadioButton.isSelected()) {
-				startDate = (Date) startDateSpinner.getValue();
-				long msInDay = 1000 * 60 * 60 * 24;
+				thread.startDate = (Date) startDateSpinner.getValue();
 				Date endDateInclusive = (Date) endDateSpinner.getValue();
-				endDate = new Date(endDateInclusive.getTime() + msInDay);
-
+				thread.endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
 			} else {
 				final Calendar cal = new GregorianCalendar();
-				cal.add(Calendar.DATE, -(int)ageSpinner.getValue());
-				startDate = cal.getTime();
-				endDate = new Date();
+				cal.add(Calendar.DATE, -(int) ageSpinner.getValue());
+				thread.startDate = cal.getTime();
+				thread.endDate = new Date();
 			}
+			thread.setFilename(nameField.getText());
+			thread.setText(searchField.getText(), regexCheckBox.isSelected(), ignoreCaseBox.isSelected());
+			thread.contextLinesBefore = (int) contextBeforeSpinner.getValue();
+			thread.contextLinesAfter = (int) contextAfterSpinner.getValue();
+			thread.dateParser = new FileDater(parseDateBox.isSelected());
+			thread.charset = charset();
 
-			if (startDate.compareTo(endDate) >= 0) {
-				throw new Exception("Start date equal to or after end date");
-			}
-
-			final String name = nameField.getText();
-			if (name.length() == 0) {
-				throw new Exception("No file name filter");
-			}
-
-			final boolean ignoreCase = ignoreCaseBox.isSelected();
-
-			final boolean regex = regexCheckBox.isSelected();
-
-			final int context = (int) contextSpinner.getValue();
-
-			final FileDater fd = new FileDater(parseDateBox.isSelected());
-
-			savePrefs();
-
-			searchThread = new SearchThread(this, searchDirs, startDate, endDate, name, text, regex, ignoreCase, context, fd);
-			searchThread.start();
+			thread.start();
 			
 		} catch (final Exception e) {
 			e.printStackTrace();
@@ -489,11 +485,23 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 		{
 			final Date maxDate = new GregorianCalendar(2099, 11, 31).getTime();
-			final Date minDate = new GregorianCalendar(2000, 0, 1).getTime();
+			final Date minDate = new GregorianCalendar(1970, 0, 1).getTime();
 			startDateSpinner.setModel(new SpinnerDateModel(minDate, minDate, maxDate, Calendar.DATE));
 			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, DF.toPattern()));
 			endDateSpinner.setModel(new SpinnerDateModel(maxDate, minDate, maxDate, Calendar.DATE));
 			endDateSpinner.setEditor(new JSpinner.DateEditor(endDateSpinner, DF.toPattern()));
+		}
+		
+		{
+			Vector<ComboItem> v = new Vector<>();
+			Charset dcs = Charset.defaultCharset();
+			v.add(new ComboItem(dcs, dcs.name()));
+			for (Charset cs : new Charset[] { StandardCharsets.US_ASCII, StandardCharsets.ISO_8859_1, StandardCharsets.UTF_8, StandardCharsets.UTF_16 }) {
+				if (!cs.name().equals(dcs.name())) {
+					v.add(new ComboItem(cs, cs.name()));
+				}
+			}
+			charsetBox.setModel(new DefaultComboBoxModel<>(v));
 		}
 
 		final ButtonGroup bg = new ButtonGroup();
@@ -504,9 +512,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		northPanel.add(inlineFlowPanel(dirLabel, dirButton));
 		northPanel.add(inlineFlowPanel(new JLabel("Filename Contains"), nameField));
 		northPanel.add(parseDateBox);
-		northPanel.add(inlineFlowPanel(new JLabel("Line Contains"), searchField, regexCheckBox, ignoreCaseBox));
+		northPanel.add(inlineFlowPanel(new JLabel("Line Contains"), searchField, regexCheckBox, ignoreCaseBox, charsetBox));
 		northPanel.add(inlineFlowPanel(dateRadioButton, startDateSpinner, new JLabel("-"), endDateSpinner, ageRadioButton, ageSpinner));
-		northPanel.add(inlineFlowPanel(new JLabel("Context Lines"), contextSpinner));
+		northPanel.add(inlineFlowPanel(new JLabel("Context Before"), contextBeforeSpinner, new JLabel("After"), contextAfterSpinner));
 		northPanel.add(inlineFlowPanel(startButton, stopButton));
 
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
@@ -576,7 +584,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
-		searchThread = null;
+		thread = null;
 	}
 	
 	@Override
@@ -588,6 +596,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Error", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
-		searchThread = null;
+		thread = null;
 	}
 }

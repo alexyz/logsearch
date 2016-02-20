@@ -1,13 +1,11 @@
 package ls;
 
 import java.io.*;
+import java.nio.charset.Charset;
 import java.util.*;
 import java.util.regex.Pattern;
 
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipFile;
-import org.apache.commons.compress.archivers.zip.ZipMethod;
-import org.apache.commons.io.input.CountingInputStream;
+import org.apache.commons.compress.archivers.zip.*;
 
 import static ls.LogSearchUtil.*;
 
@@ -15,46 +13,39 @@ public class SearchThread extends Thread {
 
 	private static final int MAX_MATCHES = 1000;
 
-	private static void sleep () {
-		String s = System.getProperty("ls.slow");
-		if (s != null && s.length() > 0) {
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
-	}
-
 	public volatile boolean running;
+	public Set<File> dirs;
+	public Date startDate;
+	public Date endDate;
+	public int contextLinesBefore;
+	public int contextLinesAfter;
+	public FileDater dateParser;
+	public Charset charset;
 
 	private final List<Result> results = new ArrayList<>();
 	private final Map<File,ZipFile> zipFiles = new TreeMap<>();
 	private final SearchListener listener;
-	private final Set<File> dirs;
-	private final Date startDate;
-	private final Date endDate;
-	private final String filenameLower;
-	private final String text;
-	private final boolean ignoreCase;
-	private final int contextLines;
-	private final FileDater dateParser;
-	private final Pattern pattern;
+	
+	private String filenameLower;
+	private String text;
+	private boolean ignoreCase;
+	private Pattern pattern;
 
 	private long totalCount;
 
-	public SearchThread (SearchListener listener, Set<File> dirs, Date startDate, Date endDate, String filename, String text, boolean regex, boolean ignoreCase, int contextLines, FileDater dateParser) {
+	public SearchThread (SearchListener listener) {
 		super("SearchThread");
 		setPriority(Thread.MIN_PRIORITY);
 		setDaemon(true);
-		this.ignoreCase = ignoreCase;
-		this.endDate = endDate;
 		this.listener = listener;
-		this.dirs = dirs;
-		this.startDate = startDate;
-		this.contextLines = contextLines;
-		this.dateParser = dateParser;
-		this.filenameLower = filename.toLowerCase();
+	}
+	
+	public void setFilename(String name) {
+		this.filenameLower = name.toLowerCase();
+	}
+	
+	public void setText(String text, boolean regex, boolean ignoreCase) {
+		this.ignoreCase = ignoreCase;
 		this.text = ignoreCase ? text.toUpperCase() : text;
 		this.pattern = regex && text.length() > 0 ? Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
 	}
@@ -63,6 +54,12 @@ public class SearchThread extends Thread {
 	public void run () {
 		try {
 			System.out.println("run");
+			if (startDate.compareTo(endDate) >= 0) {
+				throw new Exception("Start date equal to or after end date");
+			}
+			if (filenameLower.length() == 0) {
+				throw new Exception("No file name filter");
+			}
 			running = true;
 			listener.searchUpdate("finding");
 			long t = System.nanoTime();
@@ -202,8 +199,6 @@ public class SearchThread extends Thread {
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-
-			sleep();
 		}
 	}
 
@@ -223,7 +218,7 @@ public class SearchThread extends Thread {
 		int matches = 0;
 
 		LineCountingInputStream lcis;
-		try (BufferedReader br = new BufferedReader(new InputStreamReader(lcis = new LineCountingInputStream(is)))) {
+		try (BufferedReader br = new BufferedReader(new InputStreamReader(lcis = new LineCountingInputStream(is), charset))) {
 			int lineno = 1;
 			String line;
 
@@ -241,11 +236,11 @@ public class SearchThread extends Thread {
 						result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
 					}
 					result.lines.put(lineno, line);
-					forward = contextLines;
+					forward = contextLinesAfter;
 				}
 
-				if (contextLines > 0) {
-					if (backward.size() >= contextLines) {
+				if (contextLinesBefore > 0) {
+					if (backward.size() >= contextLinesBefore) {
 						backward.remove(0);
 					}
 					backward.add(line);
