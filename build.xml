@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <?xml version="1.0" encoding="UTF-8"?>
 <project default="jar">
 
@@ -32,3 +33,38 @@
 	</target>
 
 </project>
+=======
+<?xml version="1.0" encoding="UTF-8"?>
+<project default="jar">
+
+	<!-- run mvn dependency:copy-dependencies first... -->
+
+	<path id="cp">
+		<fileset dir="target/dependency" includes="**/*.jar" />
+	</path>
+
+	<target name="compile" unless="eclipse.pdebuild.home">
+		<delete dir="bin" />
+		<mkdir dir="bin" />
+		<javac classpathref="cp" srcdir="src" destdir="bin" source="1.7" target="1.7" includeAntRuntime="false" />
+	</target>
+
+	<target name="jar" depends="compile">
+		<tstamp />
+		<jar destfile="dist/logsearch.jar">
+			<manifest>
+				<attribute name="Main-Class" value="ls.LogSearchJFrame" />
+			</manifest>
+			<fileset dir="bin" />
+			<zipgroupfileset dir="target/dependency" includes="**/*.jar" />
+		</jar>
+	</target>
+
+	<target name="deploy" depends="jar">
+		<copy todir="${user.home}/Dropbox/Public">
+			<fileset dir="dist" includes="**/*.jar" />
+		</copy>
+	</target>
+
+</project>
+>>>>>>> branch 'master' of https://github.com/alexyz/logsearch.git
