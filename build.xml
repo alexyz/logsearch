@@ -2,6 +2,7 @@
 <project default="jar">
 
 	<!-- run mvn dependency:copy-dependencies first... -->
+	
 
 	<path id="cp">
 		<fileset dir="target/dependency" includes="**/*.jar" />
