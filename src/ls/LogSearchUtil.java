@@ -176,6 +176,22 @@ public class LogSearchUtil {
 		}
 		return p;
 	}
+	
+	public static String formatSize(long l) {
+		int g = 1_000_000_000;
+		if (l > g) {
+			return (l / g) + " GB";
+		}
+		int m = 1_000_000;
+		if (l > m) {
+			return (l / m) + " MB";
+		}
+		int k = 1000;
+		if (l > k) {
+			return (l / k) + " KB";
+		}
+		return l + " B";
+	}
 
 	private LogSearchUtil() {
 		//

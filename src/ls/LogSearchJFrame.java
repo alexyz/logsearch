@@ -7,8 +7,6 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
-import java.nio.channels.FileChannel;
-import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.prefs.Preferences;
@@ -568,12 +566,26 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 
 	@Override
-	public void searchComplete (final String msg) {
+	public void searchComplete (final SearchCompleteEvent e) {
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
 				updateTitle(null);
+				String msg = String.format("Files: %d\nSize: %s\nSeconds: %.1f\nSpeed: %s", 
+						e.results, formatSize(e.bytes), e.seconds, formatSize((long)(e.bytes/e.seconds)) + "/s");
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
+			}
+		});
+		searchThread = null;
+	}
+	
+	@Override
+	public void searchError (final String msg) {
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run () {
+				updateTitle(null);
+				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Error", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
 		searchThread = null;

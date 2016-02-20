@@ -76,12 +76,11 @@ public class SearchThread extends Thread {
 			scan();
 			long tns = System.nanoTime() - t;
 			double ts = tns / 1_000_000_000.0;
-			double mb = totalCount / 1_000_000.0;
-			listener.searchComplete(String.format("Files: %d  Megabytes: %.1f  Seconds: %.1f  MB/s: %.1f", results.size(), mb, ts, (mb/ts)));
+			listener.searchComplete(new SearchCompleteEvent(results.size(), ts, totalCount));
 
 		} catch (Exception e) {
 			e.printStackTrace();
-			listener.searchComplete(e.toString());
+			listener.searchError(e.toString());
 
 		} finally {
 			for (ZipFile zf : zipFiles.values()) {

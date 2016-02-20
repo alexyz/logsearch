@@ -94,7 +94,7 @@ public class ResultTableModel extends AbstractTableModel {
 			case 1:
 				return r.name();
 			case 2:
-				return r.size;
+				return LogSearchUtil.formatSize(r.size);
 			case 3:
 				return r.matches != null ? r.matches : "";
 			default:
