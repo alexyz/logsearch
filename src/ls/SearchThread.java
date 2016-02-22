@@ -230,7 +230,10 @@ public class SearchThread extends Thread {
 
 				if (testLine(line)) {
 					matches++;
-					result.offsets.add(lcis.lines.get(lineno - 1));
+					// FIXME this doesn't work well...
+					if (lcis.lines.size() >= lineno) {
+						result.offsets.add(lcis.lines.get(lineno - 1));
+					}
 					for (int n = 0; n < backward.size(); n++) {
 						// backward = [l-3] [l-2] [l-1]
 						result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));

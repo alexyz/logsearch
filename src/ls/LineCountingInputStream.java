@@ -32,7 +32,7 @@ public class LineCountingInputStream extends InputStream {
 		int x = is.read(b, off, len);
 		for (int n = 0; n < x; n++) {
 			count++;
-			if (b[n] == '\n') {
+			if (b[off + n] == '\n') {
 				lines.add(count);
 			}
 		}
