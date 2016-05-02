@@ -7,3 +7,4 @@ target
 .settings
 logs
 server.log*
+dependency-reduced-pom.xml

@@ -1,5 +1,6 @@
 package ls;
 
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.io.*;
 import java.util.*;
@@ -164,9 +165,17 @@ public class LogSearchUtil {
 	public static JPanel inlineFlowPanel (JComponent... comps) {
 		FlowLayout fl = new FlowLayout();
 		fl.setVgap(0);
+		fl.setHgap(0);
 		JPanel p = new JPanel(fl);
+		boolean rest = false;
 		for (JComponent c : comps) {
+			if (rest) {
+				JPanel q = new JPanel();
+				q.setPreferredSize(new Dimension(5,5));
+				p.add(q);
+			}
 			p.add(c);
+			rest = true;
 		}
 		return p;
 	}

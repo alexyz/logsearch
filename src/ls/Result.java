@@ -3,6 +3,9 @@ package ls;
 import java.io.File;
 import java.util.*;
 
+/**
+ * results of a search in a particular file
+ */
 public class Result implements Comparable<Result> {
 	/** map of line number to line */
 	public final NavigableMap<Integer, String> lines = new TreeMap<>();

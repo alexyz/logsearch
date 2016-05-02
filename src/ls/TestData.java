@@ -7,7 +7,7 @@ import java.util.zip.GZIPOutputStream;
 import org.apache.commons.compress.archivers.zip.*;
 
 /**
- * generate test data
+ * generate test data (plain text, gz and zip)
  */
 public class TestData {
 	
