@@ -21,25 +21,13 @@ import org.apache.commons.lang3.text.WordUtils;
 
 import static ls.LogSearchUtil.*;
 
+import static ls.PreferenceUtil.*;
+
 public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	public static final String TITLE = "LogSearch";
 
 	private static final SimpleDateFormat DF = new SimpleDateFormat("yyyy-MM-dd");
-	private static final String STARTDATE_PREF = "startdate";
-	private static final String ENDDATE_PREF = "enddate";
-	private static final String PARSEDATE_PREF = "parsedate";
-	private static final String CONTEXT_BEFORE_PREF = "contextbefore";
-	private static final String CONTEXT_AFTER_PREF = "contextafter";
-	private static final String CASE_PREF = "case";
-	private static final String START_OR_AGE_PREF = "start";
-	private static final String EDITOR_PREF = "editor";
-	private static final String AGE_PREF = "age";
-	private static final String SEARCH_PREF = "search";
-	private static final String NAME_PREF = "name";
-	private static final String DIR_PREF = "dir";
-	private static final String DIS_DIR_PREF = "disdir";
-	private static final String REGEX_PREF = "regex";
 
 	public static void main (final String[] args) {
 		try {
