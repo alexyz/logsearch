@@ -9,7 +9,6 @@ import java.util.*;
 public class Result implements Comparable<Result> {
 	/** map of line number to line */
 	public final NavigableMap<Integer, String> lines = new TreeMap<>();
-	public final NavigableSet<Long> offsets = new TreeSet<>();
 	/** name of the log file */
 	public final String name;
 	public final Date date;
@@ -19,13 +18,11 @@ public class Result implements Comparable<Result> {
 	
 	// updated during search
 	public Object matches;
-	public long size;
 
 	public Result(File file, Date date, String entry) {
 		this.file = file;
 		this.date = date;
 		this.entry = entry;
-		this.size = size;
 		if (entry != null) {
 			int i = entry.lastIndexOf("/");
 			if (i >= 0 && i < entry.length()) {

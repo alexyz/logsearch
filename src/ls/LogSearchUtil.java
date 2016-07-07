@@ -3,6 +3,8 @@ package ls;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.io.*;
+import java.math.*;
+import java.text.NumberFormat;
 import java.util.*;
 
 import javax.swing.JComponent;
@@ -24,6 +26,10 @@ public class LogSearchUtil {
 	private static final String OPEN = "/usr/bin/open";
 
 	private static Map<Object, File> TEMP_FILES = new TreeMap<>();
+	
+	private static final String[] PREFIX = new String[] {
+			"B", "KB", "MB", "GB", "TB", "PB", "EB"
+	};
 
 	public static void execOpen (File editor, File file, int lineno) throws Exception {
 		String[] args;
@@ -188,20 +194,10 @@ public class LogSearchUtil {
 		return p;
 	}
 	
-	public static String formatSize(long l) {
-		int g = 1_000_000_000;
-		if (l > g) {
-			return (l / g) + " GB";
-		}
-		int m = 1_000_000;
-		if (l > m) {
-			return (l / m) + " MB";
-		}
-		int k = 1000;
-		if (l > k) {
-			return (l / k) + " KB";
-		}
-		return l + " B";
+	public static String formatSize (long l) {
+		int p = (int) (Math.log10(l) / 3);
+		BigDecimal s = new BigDecimal(l).round(new MathContext(3)).scaleByPowerOfTen(-3*p);
+		return NumberFormat.getNumberInstance().format(s) + PREFIX[p];
 	}
 
 	private LogSearchUtil() {
