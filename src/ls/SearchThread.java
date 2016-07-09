@@ -14,23 +14,28 @@ public class SearchThread extends Thread {
 	private static final int MAX_MATCHES = 1000;
 
 	public volatile boolean running;
-	public Set<File> dirs;
-	public Date startDate;
-	public Date endDate;
-	public int contextLinesBefore;
-	public int contextLinesAfter;
-	public FileDater dateParser;
-	public Charset charset;
-
+	
 	private final List<Result> results = new ArrayList<>();
 	private final Map<File,ZipFile> zipFiles = new TreeMap<>();
 	private final SearchListener listener;
 	
+	private Set<File> dirs;
+	private Date startDate;
+	private Date endDate;
+	private int contextLinesBefore;
+	private int contextLinesAfter;
+	private FileDater dateParser;
+	private Charset charset;
 	private String filenameLower;
+	/** text to include, uppercase if ignore case */
 	private String text;
+	/** text to exclude, uppercase if ignore case */
+	private String exText;
 	private boolean ignoreCase;
+	/** pattern to find, null if not regex */
 	private Pattern pattern;
-
+	/** pattern to exclude, null if not regex */
+	private Pattern exPattern;
 	private long totalCount;
 
 	public SearchThread (SearchListener listener) {
@@ -40,25 +45,58 @@ public class SearchThread extends Thread {
 		this.listener = listener;
 	}
 	
+	public void setDateParser (FileDater dateParser) {
+		this.dateParser = dateParser;
+	}
+	
+	public void setCharset (Charset charset) {
+		this.charset = charset;
+	}
+	
+	public void setDirs (Set<File> dirs) {
+		this.dirs = dirs;
+	}
+	
+	public void setContext (int contextLinesBefore, int contextLinesAfter) {
+		this.contextLinesBefore = contextLinesBefore;
+		this.contextLinesAfter = contextLinesAfter;
+	}
+	
+	public void setStartDate (Date startDate) {
+		this.startDate = startDate;
+	}
+	
+	public void setEndDate (Date endDate) {
+		this.endDate = endDate;
+	}
+	
 	public void setFilename(String name) {
 		this.filenameLower = name.toLowerCase();
 	}
 	
-	public void setText(String text, boolean regex, boolean ignoreCase) {
-		this.ignoreCase = ignoreCase;
+	public void setText(String text, String exText, boolean regex, boolean ignoreCase) {
 		this.text = ignoreCase ? text.toUpperCase() : text;
+		this.exText = ignoreCase ? exText.toUpperCase() : exText;
 		this.pattern = regex && text.length() > 0 ? Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
+		this.exPattern = regex && exText.length() > 0 ? Pattern.compile(exText, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
+		this.ignoreCase = ignoreCase;
 	}
 
 	@Override
 	public void run () {
 		try {
 			System.out.println("run");
-			if (startDate.compareTo(endDate) >= 0) {
+			if (startDate != null && endDate != null && startDate.compareTo(endDate) >= 0) {
 				throw new Exception("Start date equal to or after end date");
 			}
 			if (filenameLower.length() == 0) {
 				throw new Exception("No file name filter");
+			}
+			if (text == null || exText == null) {
+				throw new Exception("No text");
+			}
+			if (dirs == null || dirs.size() == 0) {
+				throw new Exception("No dirs");
 			}
 			running = true;
 			listener.searchUpdate("finding");
@@ -192,6 +230,8 @@ public class SearchThread extends Thread {
 							}
 						}
 					}
+				} else {
+					result.matches = "*";
 				}
 
 				listener.searchResult(result);
@@ -260,12 +300,30 @@ public class SearchThread extends Thread {
 	}
 
 	private boolean testLine (String line) {
+		boolean found = false;
+		String lineUpper = null;
+		
 		if (pattern != null) {
-			return pattern.matcher(line).find();
+			found = pattern.matcher(line).find();
+		} else if (text.length() > 0) {
+			lineUpper = ignoreCase ? line.toUpperCase() : line;
+			found = lineUpper.contains(text);
 		} else {
-			String lineUpper = ignoreCase ? line.toUpperCase() : line;
-			return lineUpper.contains(text);
+			found = true;
 		}
+		
+		if (found) {
+			if (exPattern != null) {
+				found = !exPattern.matcher(line).find();
+			} else if (exText.length() > 0) {
+				if (lineUpper == null) {
+					lineUpper = ignoreCase ? line.toUpperCase() : line;
+				}
+				found = !lineUpper.contains(exText);
+			}
+		}
+		
+		return found;
 	}
 
 }

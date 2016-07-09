@@ -17,6 +17,7 @@ public class Result implements Comparable<Result> {
 	public final String entry;
 	
 	// updated during search
+	/** match description (null for no match, or number of lines, or error etc) */
 	public Object matches;
 
 	public Result(File file, Date date, String entry) {
@@ -68,6 +69,11 @@ public class Result implements Comparable<Result> {
 			c = name.compareToIgnoreCase(o.name);
 		}
 		return -c;
+	}
+
+	@Override
+	public String toString () {
+		return "Result [lines=" + lines.size() + ", name=" + name + ", date=" + date + ", file=" + file + ", entry=" + entry + ", matches=" + matches + "]";
 	}
 
 }

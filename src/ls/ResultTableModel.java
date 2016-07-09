@@ -29,7 +29,7 @@ public class ResultTableModel extends AbstractTableModel {
 	public void add (Result fd) {
 		results.add(fd);
 		Collections.sort(results);
-		if (fd.lines.size() > 0) {
+		if (fd.lines.size() > 0 || fd.matches != null) {
 			matchingResults.add(fd);
 			Collections.sort(matchingResults);
 		}

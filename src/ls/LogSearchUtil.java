@@ -8,6 +8,7 @@ import java.text.NumberFormat;
 import java.util.*;
 
 import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
@@ -22,6 +23,22 @@ import org.apache.commons.io.IOUtils;
 public class LogSearchUtil {
 
 	public static final long MS_IN_DAY = 1000 * 60 * 60 * 24;
+	
+	public static final String STARTDATE_PREF = "startdate";
+	public static final String ENDDATE_PREF = "enddate";
+	public static final String PARSEDATE_PREF = "parsedate";
+	public static final String CONTEXT_BEFORE_PREF = "contextbefore";
+	public static final String CONTEXT_AFTER_PREF = "contextafter";
+	public static final String CASE_PREF = "case";
+	public static final String START_OR_AGE_PREF = "start";
+	public static final String EDITOR_PREF = "editor";
+	public static final String AGE_PREF = "age";
+	public static final String SEARCH_PREF = "search";
+	public static final String NAME_PREF = "name";
+	public static final String DIR_PREF = "dir";
+	public static final String DIS_DIR_PREF = "disdir";
+	public static final String REGEX_PREF = "regex";
+	public static final String EXCLUDE_PREF = "exclude";
 	
 	private static final String OPEN = "/usr/bin/open";
 
@@ -168,19 +185,26 @@ public class LogSearchUtil {
 		return dirSb.toString();
 	}
 
-	public static JPanel inlineFlowPanel (JComponent... comps) {
+	public static JPanel inlineFlowPanel (Object... comps) {
 		FlowLayout fl = new FlowLayout();
 		fl.setVgap(0);
 		fl.setHgap(0);
 		JPanel p = new JPanel(fl);
 		boolean rest = false;
-		for (JComponent c : comps) {
+		for (Object c : comps) {
 			if (rest) {
 				JPanel q = new JPanel();
 				q.setPreferredSize(new Dimension(5,5));
 				p.add(q);
 			}
-			p.add(c);
+			if (c instanceof String) {
+				c = new JLabel((String)c);
+			}
+			if (c instanceof JComponent) {
+				p.add((JComponent)c);
+			} else {
+				throw new RuntimeException(String.valueOf(c));
+			}
 			rest = true;
 		}
 		return p;
@@ -195,11 +219,16 @@ public class LogSearchUtil {
 	}
 	
 	public static String formatSize (long l) {
-		int p = (int) (Math.log10(l) / 3);
-		BigDecimal s = new BigDecimal(l).round(new MathContext(3)).scaleByPowerOfTen(-3*p);
-		return NumberFormat.getNumberInstance().format(s) + PREFIX[p];
+		if (l > 0) {
+			// can't take log of 0...
+			int p = (int) (Math.log10(l) / 3);
+			BigDecimal s = new BigDecimal(l).round(new MathContext(3)).scaleByPowerOfTen(-3*p);
+			return NumberFormat.getNumberInstance().format(s) + PREFIX[p];
+		} else {
+			return String.valueOf(l) + "B";
+		}
 	}
-
+	
 	private LogSearchUtil() {
 		//
 	}

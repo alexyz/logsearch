@@ -21,8 +21,6 @@ import org.apache.commons.lang3.text.WordUtils;
 
 import static ls.LogSearchUtil.*;
 
-import static ls.PreferenceUtil.*;
-
 public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	public static final String TITLE = "LogSearch";
@@ -41,8 +39,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	private final JLabel dirLabel = new JLabel();
 	private final JButton dirButton = new JButton("Directories...");
-	private final JTextField nameTextField = new JTextField();
-	private final JTextField searchTextField = new JTextField();
+	private final JTextField nameTextField = new JTextField(10);
+	private final JTextField containsTextField = new JTextField(15);
+	private final JTextField doesNotContainTextField = new JTextField(15);
 	private final JSpinner startDateSpinner = new JSpinner();
 	private final JSpinner endDateSpinner = new JSpinner();
 	private final JSpinner ageSpinner = new JSpinner(new SpinnerNumberModel(7, 1, 999, 1));
@@ -89,7 +88,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		stringToDirs(disDirs, prefs.get(DIS_DIR_PREF, ""));
 		dirLabel.setText(String.valueOf(dirs.size()));
 		nameTextField.setText(prefs.get(NAME_PREF, "server.log"));
-		searchTextField.setText(prefs.get(SEARCH_PREF, "a"));
+		containsTextField.setText(prefs.get(SEARCH_PREF, ""));
+		doesNotContainTextField.setText(prefs.get(EXCLUDE_PREF, ""));
 		ageSpinner.setValue(prefs.getInt(AGE_PREF, 7));
 		editor = new File(prefs.get(EDITOR_PREF, defaultEditor().getAbsolutePath()));
 		if (!editor.exists()) {
@@ -118,7 +118,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.put(DIR_PREF, dirsToString(dirs));
 		prefs.put(DIS_DIR_PREF, dirsToString(disDirs));
 		prefs.put(NAME_PREF, nameTextField.getText());
-		prefs.put(SEARCH_PREF, searchTextField.getText());
+		prefs.put(SEARCH_PREF, containsTextField.getText());
+		prefs.put(EXCLUDE_PREF, doesNotContainTextField.getText());
 		prefs.put(EDITOR_PREF, editor != null ? editor.getAbsolutePath() : "");
 		prefs.putInt(AGE_PREF, (int) ageSpinner.getValue());
 		prefs.putBoolean(START_OR_AGE_PREF, dateRadioButton.isSelected());
@@ -205,9 +206,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		stopButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent e) {
-				if (thread != null) {
-					thread.running = false;
-				}
+				stop();
 			}
 		});
 
@@ -283,6 +282,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		});
 	}
+	
+	/** update start/stop buttons */
+	private void updateStart(boolean start) {
+		startButton.setEnabled(start);
+		stopButton.setEnabled(!start);
+	}
 
 	private void view() {
 		System.out.println("view");
@@ -291,7 +296,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			final Result result = tableModel.getResult(r);
 			try {
 				File file = LogSearchUtil.toTempFile(result);
-				ViewJFrame dialog = new ViewJFrame(this, file, charset(), searchTextField.getText(), ignoreCaseCheckBox.isSelected(), regexCheckBox.isSelected());
+				ViewJFrame dialog = new ViewJFrame(this, file, charset(), containsTextField.getText(), ignoreCaseCheckBox.isSelected(), regexCheckBox.isSelected());
 				dialog.setVisible(true);
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -330,7 +335,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 
 	private Pattern pattern () {
-		String text = searchTextField.getText();
+		String text = containsTextField.getText();
 		if (!regexCheckBox.isSelected()) {
 			text = Pattern.quote(text);
 		}
@@ -404,10 +409,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		try {
 			System.out.println("search");
 
-			if (thread != null) {
-				throw new Exception("Already running");
-			}
-
 			if (dirs.size() == 0) {
 				throw new Exception("No directories chosen");
 			}
@@ -437,32 +438,37 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 					}
 				}
 				if (add) {
+					// XXX should probably check dir exists
 					searchDirs.add(dir);
 				}
 			}
 			
 			System.out.println("dirs to search: " + searchDirs);
 			
-			thread = new SearchThread(this);
-			thread.dirs = searchDirs;
+			Date startDate, endDate;
 			if (dateRadioButton.isSelected()) {
-				thread.startDate = (Date) startDateSpinner.getValue();
+				startDate = (Date) startDateSpinner.getValue();
 				Date endDateInclusive = (Date) endDateSpinner.getValue();
-				thread.endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
+				endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
 			} else {
 				final Calendar cal = new GregorianCalendar();
 				cal.add(Calendar.DATE, -(int) ageSpinner.getValue());
-				thread.startDate = cal.getTime();
-				thread.endDate = new Date();
+				startDate = cal.getTime();
+				endDate = new Date();
 			}
+			
+			thread = new SearchThread(this);
+			thread.setDirs(searchDirs);
+			thread.setStartDate(startDate);
+			thread.setEndDate(endDate);
 			thread.setFilename(nameTextField.getText());
-			thread.setText(searchTextField.getText(), regexCheckBox.isSelected(), ignoreCaseCheckBox.isSelected());
-			thread.contextLinesBefore = (int) contextBeforeSpinner.getValue();
-			thread.contextLinesAfter = (int) contextAfterSpinner.getValue();
-			thread.dateParser = new FileDater(parseDateCheckBox.isSelected());
-			thread.charset = charset();
-
+			thread.setText(containsTextField.getText().trim(), doesNotContainTextField.getText().trim(), regexCheckBox.isSelected(), ignoreCaseCheckBox.isSelected());
+			thread.setContext((Integer) contextBeforeSpinner.getValue(), (Integer) contextAfterSpinner.getValue());
+			thread.setDateParser(new FileDater(parseDateCheckBox.isSelected()));
+			thread.setCharset(charset());
 			thread.start();
+
+			updateStart(false);
 			
 		} catch (final Exception e) {
 			e.printStackTrace();
@@ -488,9 +494,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		setJMenuBar(menuBar);
 		
-		nameTextField.setColumns(10);
-		searchTextField.setColumns(15);
-
+		updateStart(true);
+		
 		{
 			final Date maxDate = new GregorianCalendar(2099, 11, 31).getTime();
 			final Date minDate = new GregorianCalendar(1970, 0, 1).getTime();
@@ -518,11 +523,15 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 		final JPanel northPanel = new JPanel(new FlowLayout2());
 		northPanel.add(inlineFlowPanel(dirLabel, dirButton));
-		northPanel.add(inlineFlowPanel(new JLabel("Filename Contains"), nameTextField));
+		northPanel.add(inlineFlowPanel("Filename Contains", nameTextField));
 		northPanel.add(parseDateCheckBox);
-		northPanel.add(inlineFlowPanel(new JLabel("Line Contains"), searchTextField, regexCheckBox, ignoreCaseCheckBox, charsetComboBox));
-		northPanel.add(inlineFlowPanel(dateRadioButton, startDateSpinner, new JLabel("-"), endDateSpinner, ageRadioButton, ageSpinner));
-		northPanel.add(inlineFlowPanel(new JLabel("Context Before"), contextBeforeSpinner, new JLabel("After"), contextAfterSpinner));
+		northPanel.add(inlineFlowPanel("Charset", charsetComboBox));
+		northPanel.add(inlineFlowPanel("Line Contains", containsTextField));
+		northPanel.add(inlineFlowPanel("Doesn't Contain", doesNotContainTextField));
+		northPanel.add(regexCheckBox);
+		northPanel.add(ignoreCaseCheckBox);
+		northPanel.add(inlineFlowPanel(dateRadioButton, startDateSpinner, "-", endDateSpinner, ageRadioButton, ageSpinner));
+		northPanel.add(inlineFlowPanel("Context Before", contextBeforeSpinner, "After", contextAfterSpinner));
 		northPanel.add(inlineFlowPanel(startButton, stopButton));
 
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
@@ -567,6 +576,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	@Override
 	public void searchResult (final Result fd) {
+		System.out.println("search result " + fd);
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
@@ -586,6 +596,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	@Override
 	public void searchUpdate (final String msg) {
+		System.out.println("search update " + msg);
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
@@ -596,27 +607,38 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	@Override
 	public void searchComplete (final SearchCompleteEvent e) {
+		System.out.println("search complete " + e);
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
+				thread = null;
 				updateTitle(null);
+				updateStart(true);
 				String msg = String.format("Files: %d\nSize: %s\nSeconds: %.1f\nSpeed: %s", 
-						e.results, formatSize(e.bytes), e.seconds, formatSize((long)(e.bytes/e.seconds)) + "/s");
+						e.results, formatSize(e.bytes), e.seconds, e.bytes > 0 ? formatSize((long)(e.bytes/e.seconds)) + "/s" : "n/a");
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
-		thread = null;
 	}
 	
 	@Override
 	public void searchError (final String msg) {
+		System.out.println("search error " + msg);
 		SwingUtilities.invokeLater(new Runnable() {
 			@Override
 			public void run () {
+				thread = null;
+				updateStart(true);
 				updateTitle(null);
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Error", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
-		thread = null;
+	}
+
+	private void stop () {
+		if (thread != null) {
+			updateStart(true);
+			thread.running = false;
+		}
 	}
 }

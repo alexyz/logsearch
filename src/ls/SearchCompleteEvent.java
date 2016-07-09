@@ -10,4 +10,9 @@ public class SearchCompleteEvent {
 		this.seconds = seconds;
 		this.bytes = bytes;
 	}
+
+	@Override
+	public String toString () {
+		return "SearchCompleteEvent [results=" + results + ", seconds=" + seconds + ", bytes=" + bytes + "]";
+	}
 }
