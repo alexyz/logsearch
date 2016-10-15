@@ -7,6 +7,7 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
+import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -22,13 +23,14 @@ import org.apache.commons.lang3.text.WordUtils;
 import static ls.LogSearchUtil.*;
 
 public class LogSearchJFrame extends JFrame implements SearchListener {
-
-	public static final String TITLE = "LogSearch";
-
+	
 	private static final SimpleDateFormat DF = new SimpleDateFormat("yyyy-MM-dd");
-
+	
+	private static String buildTime;
+	
 	public static void main (final String[] args) {
 		try {
+			buildTime = getBuildTime();
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
 		} catch (final Exception e) {
 			e.printStackTrace();
@@ -36,7 +38,35 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		final LogSearchJFrame instance = new LogSearchJFrame();
 		instance.setVisible(true);
 	}
-
+	
+	private static String getBuildTime () throws Exception {
+		Enumeration<URL> e = ClassLoader.getSystemClassLoader().getResources("META-INF/MANIFEST.MF");
+		while (e.hasMoreElements()) {
+			URL u = e.nextElement();
+			Map<String, String> m = new TreeMap<>();
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(u.openStream(), StandardCharsets.US_ASCII))) {
+				String l;
+				while ((l = br.readLine()) != null) {
+					int i = l.indexOf(":");
+					if (i > 0) {
+						m.put(l.substring(0, i).trim(), l.substring(i + 1).trim());
+					}
+				}
+			}
+			if (Objects.equals(m.get("Main-Class"), LogSearchJFrame.class.getName())) {
+				String time = m.get("Build-Time");
+				if (time != null) {
+					int i = time.indexOf("T");
+					if (i > 0) {
+						return time.substring(0, i);
+					}
+				}
+				break;
+			}
+		}
+		return null;
+	}
+	
 	private final JLabel dirLabel = new JLabel();
 	private final JButton dirButton = new JButton("Directories...");
 	private final JTextField nameTextField = new JTextField(10);
@@ -60,7 +90,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JRadioButton dateRadioButton = new JRadioButton("Date Range");
 	private final JRadioButton ageRadioButton = new JRadioButton("Age (Days)");
 	private final Set<File> dirs = new TreeSet<>();
-	private final Set<File> disDirs = new TreeSet<>();
+	private final Set<File> disabledDirs = new TreeSet<>();
 	private final JCheckBox ignoreCaseCheckBox = new JCheckBox("Ignore Case");
 	private final JSpinner contextBeforeSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 100, 1));
 	private final JSpinner contextAfterSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 100, 1));
@@ -68,12 +98,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
 	private final JButton viewButton = new JButton("View");
 	private final JComboBox<ComboItem> charsetComboBox = new JComboBox<>();
-
+	
 	private volatile SearchThread thread;
-
+	
 	private File editor;
-
-	public LogSearchJFrame () {
+	
+	public LogSearchJFrame() {
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		setPreferredSize(new Dimension(800, 600));
 		initComponents();
@@ -81,12 +111,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		loadPrefs();
 		updateTitle(null);
 	}
-
+	
 	private void loadPrefs () {
 		System.out.println("load prefs");
 		stringToDirs(dirs, prefs.get(DIR_PREF, System.getProperty("user.dir")));
-		stringToDirs(disDirs, prefs.get(DIS_DIR_PREF, ""));
-		dirLabel.setText(String.valueOf(dirs.size()));
+		stringToDirs(disabledDirs, prefs.get(DIS_DIR_PREF, ""));
+		updateDirsLabel();
 		nameTextField.setText(prefs.get(NAME_PREF, "server.log"));
 		containsTextField.setText(prefs.get(SEARCH_PREF, ""));
 		doesNotContainTextField.setText(prefs.get(EXCLUDE_PREF, ""));
@@ -103,7 +133,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		contextAfterSpinner.setValue(prefs.getInt(CONTEXT_AFTER_PREF, 1));
 		parseDateCheckBox.setSelected(prefs.getBoolean(PARSEDATE_PREF, true));
 		regexCheckBox.setSelected(prefs.getBoolean(REGEX_PREF, false));
-
+		
 		final Calendar cal = new GregorianCalendar();
 		final GregorianCalendar midnightCal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
 		final Date endDate = midnightCal.getTime();
@@ -112,11 +142,11 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		startDateSpinner.setValue(new Date(prefs.getLong(STARTDATE_PREF, startDate.getTime())));
 		endDateSpinner.setValue(new Date(prefs.getLong(ENDDATE_PREF, endDate.getTime())));
 	}
-
+	
 	private void savePrefs () {
 		System.out.println("save prefs");
 		prefs.put(DIR_PREF, dirsToString(dirs));
-		prefs.put(DIS_DIR_PREF, dirsToString(disDirs));
+		prefs.put(DIS_DIR_PREF, dirsToString(disabledDirs));
 		prefs.put(NAME_PREF, nameTextField.getText());
 		prefs.put(SEARCH_PREF, containsTextField.getText());
 		prefs.put(EXCLUDE_PREF, doesNotContainTextField.getText());
@@ -127,8 +157,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.putInt(CONTEXT_BEFORE_PREF, (int) contextBeforeSpinner.getValue());
 		prefs.putInt(CONTEXT_AFTER_PREF, (int) contextAfterSpinner.getValue());
 		prefs.putBoolean(PARSEDATE_PREF, parseDateCheckBox.isSelected());
-		prefs.putLong(STARTDATE_PREF, ((Date)startDateSpinner.getValue()).getTime());
-		prefs.putLong(ENDDATE_PREF, ((Date)endDateSpinner.getValue()).getTime());
+		prefs.putLong(STARTDATE_PREF, ((Date) startDateSpinner.getValue()).getTime());
+		prefs.putLong(ENDDATE_PREF, ((Date) endDateSpinner.getValue()).getTime());
 		prefs.putBoolean(REGEX_PREF, regexCheckBox.isSelected());
 		try {
 			prefs.flush();
@@ -136,7 +166,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			e.printStackTrace();
 		}
 	}
-
+	
 	private void initListeners () {
 		addWindowListener(new WindowAdapter() {
 			@Override
@@ -145,24 +175,24 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				savePrefs();
 			}
 		});
-
+		
 		dirButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent e) {
 				final DirectoryJDialog d = new DirectoryJDialog(LogSearchJFrame.this, "Log Directories");
 				d.addDirs(dirs, true);
-				d.addDirs(disDirs, false);
+				d.addDirs(disabledDirs, false);
 				d.setVisible(true);
 				if (d.isOk()) {
 					dirs.clear();
 					dirs.addAll(d.getDirs(true));
-					dirLabel.setText(String.valueOf(dirs.size()));
-					disDirs.clear();
-					disDirs.addAll(d.getDirs(false));
+					disabledDirs.clear();
+					disabledDirs.addAll(d.getDirs(false));
+					updateDirsLabel();
 				}
 			}
 		});
-
+		
 		editorButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent e) {
@@ -172,12 +202,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 				fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
 				fc.setFileFilter(new FileFilter() {
-
+					
 					@Override
 					public String getDescription () {
 						return "Executables";
 					}
-
+					
 					@Override
 					public boolean accept (final File f) {
 						return f.isDirectory() || f.getName().toLowerCase().endsWith(".exe");
@@ -190,7 +220,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 			}
 		});
-
+		
 		startButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
@@ -202,42 +232,42 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 			}
 		});
-
+		
 		stopButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent e) {
 				stop();
 			}
 		});
-
+		
 		openButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
 				open();
 			}
 		});
-
+		
 		saveButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
 				save();
 			}
 		});
-
+		
 		previewButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
 				preview();
 			}
 		});
-
+		
 		previewAllButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent ae) {
 				previewAll();
 			}
 		});
-
+		
 		table.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mouseClicked (final MouseEvent e) {
@@ -246,7 +276,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 			}
 		});
-
+		
 		showAllButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (final ActionEvent e) {
@@ -262,7 +292,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				}
 			}
 		});
-
+		
 		final ItemListener radioButtonListener = new ItemListener() {
 			@Override
 			public void itemStateChanged (final ItemEvent e) {
@@ -271,32 +301,33 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				ageSpinner.setEnabled(ageRadioButton.isSelected());
 			}
 		};
-
+		
 		dateRadioButton.addItemListener(radioButtonListener);
 		ageRadioButton.addItemListener(radioButtonListener);
-
+		
 		viewButton.addActionListener(new ActionListener() {
 			@Override
-			public void actionPerformed(ActionEvent e) {
+			public void actionPerformed (ActionEvent e) {
 				view();
 			}
 		});
 	}
 	
 	/** update start/stop buttons */
-	private void updateStart(boolean start) {
+	private void updateStart (boolean start) {
 		startButton.setEnabled(start);
 		stopButton.setEnabled(!start);
 	}
-
-	private void view() {
+	
+	private void view () {
 		System.out.println("view");
 		final int r = table.getSelectedRow();
 		if (r >= 0) {
 			final Result result = tableModel.getResult(r);
 			try {
 				File file = LogSearchUtil.toTempFile(result);
-				ViewJFrame dialog = new ViewJFrame(this, file, charset(), containsTextField.getText(), ignoreCaseCheckBox.isSelected(), regexCheckBox.isSelected());
+				ViewJFrame dialog = new ViewJFrame(this, file, charset(), containsTextField.getText(), ignoreCaseCheckBox.isSelected(),
+						regexCheckBox.isSelected());
 				dialog.setVisible(true);
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -304,11 +335,11 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		}
 	}
-
-	private Charset charset() {
-		return (Charset) ((ComboItem)charsetComboBox.getSelectedItem()).object;
+	
+	private Charset charset () {
+		return (Charset) ((ComboItem) charsetComboBox.getSelectedItem()).object;
 	}
-
+	
 	private void preview () {
 		System.out.println("preview");
 		final int row = table.getSelectedRow();
@@ -317,7 +348,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			if (result.lines.size() > 0) {
 				final StringBuffer sb = new StringBuffer();
 				int prevLine = 0;
-				for (final Map.Entry<Integer,String> e : result.lines.entrySet()) {
+				for (final Map.Entry<Integer, String> e : result.lines.entrySet()) {
 					int line = e.getKey();
 					if (line > prevLine + 1) {
 						sb.append("\n");
@@ -333,7 +364,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		}
 	}
-
+	
 	private Pattern pattern () {
 		String text = containsTextField.getText();
 		if (!regexCheckBox.isSelected()) {
@@ -343,7 +374,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		final Pattern p = Pattern.compile(text, f);
 		return p;
 	}
-
+	
 	private void previewAll () {
 		System.out.println("preview all");
 		final StringBuffer sb = new StringBuffer();
@@ -352,7 +383,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				sb.append("\n");
 				sb.append(result.name() + "\n");
 				sb.append("\n");
-				for (final Map.Entry<Integer,String> e : result.lines.entrySet()) {
+				for (final Map.Entry<Integer, String> e : result.lines.entrySet()) {
 					sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
 				}
 			}
@@ -363,7 +394,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		d.setHighlight(pattern(), Color.orange);
 		d.setVisible(true);
 	}
-
+	
 	private void save () {
 		try {
 			System.out.println("save");
@@ -381,7 +412,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "Save", JOptionPane.ERROR_MESSAGE);
 		}
 	}
-
+	
 	private void open () {
 		try {
 			System.out.println("open");
@@ -392,7 +423,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			if (r >= 0) {
 				final Result result = tableModel.getResult(r);
 				File file = toTempFile(result);
-
+				
 				int lineno = 0;
 				if (result.lines.size() > 0) {
 					lineno = result.lines.keySet().iterator().next();
@@ -404,17 +435,17 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			JOptionPane.showMessageDialog(this, e.toString(), "Open", JOptionPane.ERROR_MESSAGE);
 		}
 	}
-
+	
 	private void search () throws Exception {
 		try {
 			System.out.println("search");
-
+			
 			if (dirs.size() == 0) {
 				throw new Exception("No directories chosen");
 			}
-
+			
 			tableModel.clear();
-
+			
 			// sort with highest dirs first
 			final List<File> sortedDirs = new ArrayList<>(dirs);
 			Collections.sort(sortedDirs, new Comparator<File>() {
@@ -423,8 +454,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 					return o1.getAbsolutePath().length() - o2.getAbsolutePath().length();
 				}
 			});
-
+			
 			final TreeSet<File> searchDirs = new TreeSet<>();
+			
 			for (final File dir : sortedDirs) {
 				final String dirStr = dir.getAbsolutePath() + File.separator;
 				boolean add = true;
@@ -437,13 +469,16 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 						break;
 					}
 				}
-				if (add) {
-					// XXX should probably check dir exists
+				if (add && dir.isDirectory()) {
 					searchDirs.add(dir);
 				}
 			}
 			
 			System.out.println("dirs to search: " + searchDirs);
+			
+			if (dirs.size() == 0) {
+				throw new Exception("No directories exist");
+			}
 			
 			Date startDate, endDate;
 			if (dateRadioButton.isSelected()) {
@@ -454,7 +489,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				final Calendar cal = new GregorianCalendar();
 				cal.add(Calendar.DATE, -(int) ageSpinner.getValue());
 				startDate = cal.getTime();
-				endDate = new Date();
+				endDate = null;
 			}
 			
 			thread = new SearchThread(this);
@@ -462,12 +497,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			thread.setStartDate(startDate);
 			thread.setEndDate(endDate);
 			thread.setFilename(nameTextField.getText());
-			thread.setText(containsTextField.getText().trim(), doesNotContainTextField.getText().trim(), regexCheckBox.isSelected(), ignoreCaseCheckBox.isSelected());
+			thread.setText(containsTextField.getText().trim(), doesNotContainTextField.getText().trim(), regexCheckBox.isSelected(),
+					ignoreCaseCheckBox.isSelected());
 			thread.setContext((Integer) contextBeforeSpinner.getValue(), (Integer) contextAfterSpinner.getValue());
 			thread.setDateParser(new FileDater(parseDateCheckBox.isSelected()));
 			thread.setCharset(charset());
 			thread.start();
-
+			
 			updateStart(false);
 			
 		} catch (final Exception e) {
@@ -475,7 +511,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			JOptionPane.showMessageDialog(this, e.toString(), "Search", JOptionPane.ERROR_MESSAGE);
 		}
 	}
-
+	
 	private void initComponents () {
 		
 		JMenuItem viewItem = new JMenuItem("View...");
@@ -509,18 +545,19 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			Vector<ComboItem> v = new Vector<>();
 			Charset dcs = Charset.defaultCharset();
 			v.add(new ComboItem(dcs, dcs.name()));
-			for (Charset cs : new Charset[] { StandardCharsets.US_ASCII, StandardCharsets.ISO_8859_1, StandardCharsets.UTF_8, StandardCharsets.UTF_16 }) {
+			for (Charset cs : new Charset[] { StandardCharsets.US_ASCII, StandardCharsets.ISO_8859_1, StandardCharsets.UTF_8, StandardCharsets.UTF_16,
+					StandardCharsets.UTF_16BE, StandardCharsets.UTF_16LE }) {
 				if (!cs.name().equals(dcs.name())) {
 					v.add(new ComboItem(cs, cs.name()));
 				}
 			}
 			charsetComboBox.setModel(new DefaultComboBoxModel<>(v));
 		}
-
+		
 		final ButtonGroup bg = new ButtonGroup();
 		bg.add(dateRadioButton);
 		bg.add(ageRadioButton);
-
+		
 		final JPanel northPanel = new JPanel(new FlowLayout2());
 		northPanel.add(inlineFlowPanel(dirLabel, dirButton));
 		northPanel.add(inlineFlowPanel("Filename Contains", nameTextField));
@@ -533,26 +570,26 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		northPanel.add(inlineFlowPanel(dateRadioButton, startDateSpinner, "-", endDateSpinner, ageRadioButton, ageSpinner));
 		northPanel.add(inlineFlowPanel("Context Before", contextBeforeSpinner, "After", contextAfterSpinner));
 		northPanel.add(inlineFlowPanel(startButton, stopButton));
-
+		
 		table.getColumnModel().getColumn(0).setPreferredWidth(200);
 		table.getColumnModel().getColumn(1).setPreferredWidth(400);
 		table.getColumnModel().getColumn(2).setPreferredWidth(200);
 		table.getColumnModel().getColumn(3).setPreferredWidth(200);
 		final JScrollPane tableScroller = new JScrollPane(table);
-
+		
 		final JPanel southPanel = new JPanel(new GridLayout(2, 1));
 		southPanel.add(flowPanel(showAllButton, previewButton, previewAllButton));
 		southPanel.add(flowPanel(viewButton, saveButton, inlineFlowPanel(editorLabel, editorButton), openButton));
-
+		
 		final JPanel contentPanel = new JPanel(new BorderLayout());
 		contentPanel.add(northPanel, BorderLayout.NORTH);
 		contentPanel.add(tableScroller, BorderLayout.CENTER);
 		contentPanel.add(southPanel, BorderLayout.SOUTH);
-
+		
 		setContentPane(contentPanel);
 		pack();
 	}
-
+	
 	protected void viewExternal () {
 		JFileChooser f = new JFileChooser();
 		if (f.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
@@ -565,15 +602,24 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		}
 	}
-
-	private void updateTitle(String msg) {
-		String t = TITLE;
+	
+	private void updateTitle (String msg) {
+		String t = "LogSearch";
+		if (buildTime != null) {
+			t += " " + buildTime;
+		}
 		if (msg != null && msg.length() > 0) {
 			t += " [" + msg + "]";
+		} else {
+			t += " [https://github.com/alexyz/logsearch]";
 		}
 		setTitle(t);
 	}
-
+	
+	private void updateDirsLabel () {
+		dirLabel.setText(dirs.size() + "/" + (dirs.size() + disabledDirs.size()));
+	}
+	
 	@Override
 	public void searchResult (final Result fd) {
 		System.out.println("search result " + fd);
@@ -593,7 +639,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		});
 	}
-
+	
 	@Override
 	public void searchUpdate (final String msg) {
 		System.out.println("search update " + msg);
@@ -604,7 +650,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		});
 	}
-
+	
 	@Override
 	public void searchComplete (final SearchCompleteEvent e) {
 		System.out.println("search complete " + e);
@@ -614,8 +660,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				thread = null;
 				updateTitle(null);
 				updateStart(true);
-				String msg = String.format("Files: %d\nSize: %s\nSeconds: %.1f\nSpeed: %s", 
-						e.results, formatSize(e.bytes), e.seconds, e.bytes > 0 ? formatSize((long)(e.bytes/e.seconds)) + "/s" : "n/a");
+				String msg = String.format("Files: %d\nSize: %s\nSeconds: %.1f\nSpeed: %s", e.results, formatSize(e.bytes), e.seconds,
+						e.bytes > 0 ? formatSize((long) (e.bytes / e.seconds)) + "/s" : "n/a");
 				JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
@@ -634,7 +680,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		});
 	}
-
+	
 	private void stop () {
 		if (thread != null) {
 			updateStart(true);

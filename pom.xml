@@ -59,31 +59,17 @@
 							<goal>shade</goal>
 						</goals>
 						<configuration>
+							<finalName>logsearchexe</finalName>
+							<shadedArtifactAttached>true</shadedArtifactAttached>
 							<transformers>
 								<transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
 									<mainClass>ls.LogSearchJFrame</mainClass>
+									<manifestEntries>
+										<Build-Time>${maven.build.timestamp}</Build-Time>
+									</manifestEntries>
 								</transformer>
 							</transformers>
 						</configuration>
-					</execution>
-				</executions>
-			</plugin>
-			<plugin>
-				<artifactId>maven-antrun-plugin</artifactId>
-				<version>1.8</version>
-				<executions>
-					<execution>
-						<phase>install</phase>
-						<configuration>
-							<target>
-								<copy todir="${user.home}/Dropbox/Public">
-									<fileset dir="target" includes="logsearch.jar" />
-								</copy>
-							</target>
-						</configuration>
-						<goals>
-							<goal>run</goal>
-						</goals>
 					</execution>
 				</executions>
 			</plugin>
