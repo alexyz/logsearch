@@ -39,6 +39,7 @@ public class LogSearchUtil {
 	public static final String DIS_DIR_PREF = "disdir";
 	public static final String REGEX_PREF = "regex";
 	public static final String EXCLUDE_PREF = "exclude";
+	public static final String CD_PREF = "cd";
 	
 	private static final String OPEN = "/usr/bin/open";
 

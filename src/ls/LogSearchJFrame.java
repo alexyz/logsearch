@@ -26,45 +26,14 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private static final SimpleDateFormat DF = new SimpleDateFormat("yyyy-MM-dd");
 	
-	private static String buildTime;
-	
 	public static void main (final String[] args) {
 		try {
-			buildTime = getBuildTime();
 			UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
 		} catch (final Exception e) {
 			e.printStackTrace();
 		}
 		final LogSearchJFrame instance = new LogSearchJFrame();
 		instance.setVisible(true);
-	}
-	
-	private static String getBuildTime () throws Exception {
-		Enumeration<URL> e = ClassLoader.getSystemClassLoader().getResources("META-INF/MANIFEST.MF");
-		while (e.hasMoreElements()) {
-			URL u = e.nextElement();
-			Map<String, String> m = new TreeMap<>();
-			try (BufferedReader br = new BufferedReader(new InputStreamReader(u.openStream(), StandardCharsets.US_ASCII))) {
-				String l;
-				while ((l = br.readLine()) != null) {
-					int i = l.indexOf(":");
-					if (i > 0) {
-						m.put(l.substring(0, i).trim(), l.substring(i + 1).trim());
-					}
-				}
-			}
-			if (Objects.equals(m.get("Main-Class"), LogSearchJFrame.class.getName())) {
-				String time = m.get("Build-Time");
-				if (time != null) {
-					int i = time.indexOf("T");
-					if (i > 0) {
-						return time.substring(0, i);
-					}
-				}
-				break;
-			}
-		}
-		return null;
 	}
 	
 	private final JLabel dirLabel = new JLabel();
@@ -94,13 +63,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JCheckBox ignoreCaseCheckBox = new JCheckBox("Ignore Case");
 	private final JSpinner contextBeforeSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 100, 1));
 	private final JSpinner contextAfterSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 100, 1));
-	private final JCheckBox parseDateCheckBox = new JCheckBox("Date from Filename");
 	private final JCheckBox regexCheckBox = new JCheckBox("Regex");
 	private final JButton viewButton = new JButton("View");
 	private final JComboBox<ComboItem> charsetComboBox = new JComboBox<>();
 	
 	private volatile SearchThread thread;
 	
+	private File currentDir;
 	private File editor;
 	
 	public LogSearchJFrame() {
@@ -114,7 +83,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private void loadPrefs () {
 		System.out.println("load prefs");
-		stringToDirs(dirs, prefs.get(DIR_PREF, System.getProperty("user.dir")));
+		String userdir = System.getProperty("user.dir");
+		stringToDirs(dirs, prefs.get(DIR_PREF, userdir));
 		stringToDirs(disabledDirs, prefs.get(DIS_DIR_PREF, ""));
 		updateDirsLabel();
 		nameTextField.setText(prefs.get(NAME_PREF, "server.log"));
@@ -131,7 +101,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		ignoreCaseCheckBox.setSelected(prefs.getBoolean(CASE_PREF, false));
 		contextBeforeSpinner.setValue(prefs.getInt(CONTEXT_BEFORE_PREF, 1));
 		contextAfterSpinner.setValue(prefs.getInt(CONTEXT_AFTER_PREF, 1));
-		parseDateCheckBox.setSelected(prefs.getBoolean(PARSEDATE_PREF, true));
 		regexCheckBox.setSelected(prefs.getBoolean(REGEX_PREF, false));
 		
 		final Calendar cal = new GregorianCalendar();
@@ -141,6 +110,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		final Date startDate = midnightCal.getTime();
 		startDateSpinner.setValue(new Date(prefs.getLong(STARTDATE_PREF, startDate.getTime())));
 		endDateSpinner.setValue(new Date(prefs.getLong(ENDDATE_PREF, endDate.getTime())));
+		
+		currentDir = new File(prefs.get(CD_PREF, userdir));
 	}
 	
 	private void savePrefs () {
@@ -156,10 +127,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.putBoolean(CASE_PREF, ignoreCaseCheckBox.isSelected());
 		prefs.putInt(CONTEXT_BEFORE_PREF, (int) contextBeforeSpinner.getValue());
 		prefs.putInt(CONTEXT_AFTER_PREF, (int) contextAfterSpinner.getValue());
-		prefs.putBoolean(PARSEDATE_PREF, parseDateCheckBox.isSelected());
 		prefs.putLong(STARTDATE_PREF, ((Date) startDateSpinner.getValue()).getTime());
 		prefs.putLong(ENDDATE_PREF, ((Date) endDateSpinner.getValue()).getTime());
 		prefs.putBoolean(REGEX_PREF, regexCheckBox.isSelected());
+		prefs.put(CD_PREF, currentDir.getAbsolutePath());
 		try {
 			prefs.flush();
 		} catch (final Exception e) {
@@ -497,10 +468,13 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			thread.setStartDate(startDate);
 			thread.setEndDate(endDate);
 			thread.setFilename(nameTextField.getText());
-			thread.setText(containsTextField.getText().trim(), doesNotContainTextField.getText().trim(), regexCheckBox.isSelected(),
-					ignoreCaseCheckBox.isSelected());
-			thread.setContext((Integer) contextBeforeSpinner.getValue(), (Integer) contextAfterSpinner.getValue());
-			thread.setDateParser(new FileDater(parseDateCheckBox.isSelected()));
+			thread.setText(containsTextField.getText().trim());
+			thread.setExText(doesNotContainTextField.getText().trim());
+			thread.setRegex(regexCheckBox.isSelected());
+			thread.setIgnoreCase(ignoreCaseCheckBox.isSelected());
+			thread.setContextLinesBefore(((Number)contextBeforeSpinner.getValue()).intValue());
+			thread.setContextLinesAfter(((Number)contextAfterSpinner.getValue()).intValue());
+			thread.setDateParser(new FileDater(true));
 			thread.setCharset(charset());
 			thread.start();
 			
@@ -561,7 +535,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		final JPanel northPanel = new JPanel(new FlowLayout2());
 		northPanel.add(inlineFlowPanel(dirLabel, dirButton));
 		northPanel.add(inlineFlowPanel("Filename Contains", nameTextField));
-		northPanel.add(parseDateCheckBox);
 		northPanel.add(inlineFlowPanel("Charset", charsetComboBox));
 		northPanel.add(inlineFlowPanel("Line Contains", containsTextField));
 		northPanel.add(inlineFlowPanel("Doesn't Contain", doesNotContainTextField));
@@ -592,7 +565,11 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	protected void viewExternal () {
 		JFileChooser f = new JFileChooser();
+		if (currentDir.isDirectory()) {
+			f.setCurrentDirectory(currentDir);
+		}
 		if (f.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+			currentDir = f.getSelectedFile().getParentFile();
 			try {
 				ViewJFrame fr = new ViewJFrame(this, f.getSelectedFile(), charset(), "", false, false);
 				fr.setVisible(true);
@@ -605,9 +582,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private void updateTitle (String msg) {
 		String t = "LogSearch";
-		if (buildTime != null) {
-			t += " " + buildTime;
-		}
 		if (msg != null && msg.length() > 0) {
 			t += " [" + msg + "]";
 		} else {

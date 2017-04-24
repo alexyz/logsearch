@@ -54,9 +54,11 @@ public class ViewJFrame extends JFrame {
 		this.charset = charset;
 		this.raFile = new RandomAccessFile(file, "r");
 		
+		setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
 		addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosed (WindowEvent e) {
+				System.out.println("window closed");
 				try {
 					raFile.close();
 				} catch (IOException e1) {
@@ -127,7 +129,7 @@ public class ViewJFrame extends JFrame {
 		okButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				setVisible(false);
+				dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
 			}
 		});
 		

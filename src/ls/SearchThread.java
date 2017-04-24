@@ -27,15 +27,21 @@ public class SearchThread extends Thread {
 	private FileDater dateParser;
 	private Charset charset;
 	private String filenameLower;
-	/** text to include, uppercase if ignore case */
 	private String text;
-	/** text to exclude, uppercase if ignore case */
 	private String exText;
 	private boolean ignoreCase;
+	private boolean regex;
+	
+	// variables assigned in run
+	
 	/** pattern to find, null if not regex */
 	private Pattern pattern;
 	/** pattern to exclude, null if not regex */
 	private Pattern exPattern;
+	/** text depending on ignoreCase, null if no text */
+	private String textOpt;
+	/** exText depending on ignoreCase, null if no exText */
+	private String exTextOpt;
 	private long totalCount;
 
 	public SearchThread (SearchListener listener) {
@@ -57,8 +63,11 @@ public class SearchThread extends Thread {
 		this.dirs = dirs;
 	}
 	
-	public void setContext (int contextLinesBefore, int contextLinesAfter) {
+	public void setContextLinesBefore (int contextLinesBefore) {
 		this.contextLinesBefore = contextLinesBefore;
+	}
+	
+	public void setContextLinesAfter (int contextLinesAfter) {
 		this.contextLinesAfter = contextLinesAfter;
 	}
 	
@@ -74,12 +83,20 @@ public class SearchThread extends Thread {
 		this.filenameLower = name.toLowerCase();
 	}
 	
-	public void setText(String text, String exText, boolean regex, boolean ignoreCase) {
-		this.text = ignoreCase ? text.toUpperCase() : text;
-		this.exText = ignoreCase ? exText.toUpperCase() : exText;
-		this.pattern = regex && text.length() > 0 ? Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
-		this.exPattern = regex && exText.length() > 0 ? Pattern.compile(exText, ignoreCase ? Pattern.CASE_INSENSITIVE : 0) : null;
+	public void setText(String text) {
+		this.text = text;
+	}
+	
+	public void setExText (String exText) {
+		this.exText = exText;
+	}
+	
+	public void setIgnoreCase (boolean ignoreCase) {
 		this.ignoreCase = ignoreCase;
+	}
+	
+	public void setRegex (boolean regex) {
+		this.regex = regex;
 	}
 
 	@Override
@@ -98,6 +115,24 @@ public class SearchThread extends Thread {
 			if (dirs == null || dirs.size() == 0) {
 				throw new Exception("No dirs");
 			}
+			if (text.length() > 0) {
+				if (regex) {
+					pattern = Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0);
+				} else {
+					textOpt = ignoreCase ? text.toUpperCase() : text;
+				}
+			}
+			if (exText.length() > 0) {
+				if (regex) {	
+					exPattern = Pattern.compile(exText, ignoreCase ? Pattern.CASE_INSENSITIVE : 0);
+				} else {
+					exTextOpt = ignoreCase ? exText.toUpperCase() : exText;
+				}
+			}
+			if (textOpt != null && textOpt.length() > 0 && exTextOpt != null && exTextOpt.length() > 0 && textOpt.contains(exTextOpt)) {
+				throw new Exception("Exclude text includes text");
+			}
+			
 			running = true;
 			listener.searchUpdate("finding");
 			long t = System.nanoTime();
@@ -207,7 +242,7 @@ public class SearchThread extends Thread {
 
 			try {
 				// only scan if required
-				if (text.length() > 0) {
+				if (textOpt != null || pattern != null || exTextOpt != null || exPattern != null) {
 					if (result.entry != null) {
 						ZipFile zf = zipFiles.get(result.file);
 						final ZipArchiveEntry zae = zf.getEntry(result.entry);
@@ -301,13 +336,13 @@ public class SearchThread extends Thread {
 
 	private boolean testLine (String line) {
 		boolean found = false;
-		String lineUpper = null;
+		String lineOpt = null;
 		
 		if (pattern != null) {
 			found = pattern.matcher(line).find();
-		} else if (text.length() > 0) {
-			lineUpper = ignoreCase ? line.toUpperCase() : line;
-			found = lineUpper.contains(text);
+		} else if (textOpt != null) {
+			lineOpt = ignoreCase ? line.toUpperCase() : line;
+			found = lineOpt.contains(textOpt);
 		} else {
 			found = true;
 		}
@@ -315,11 +350,9 @@ public class SearchThread extends Thread {
 		if (found) {
 			if (exPattern != null) {
 				found = !exPattern.matcher(line).find();
-			} else if (exText.length() > 0) {
-				if (lineUpper == null) {
-					lineUpper = ignoreCase ? line.toUpperCase() : line;
-				}
-				found = !lineUpper.contains(exText);
+			} else if (exTextOpt != null) {
+				lineOpt = ignoreCase && lineOpt == null ? line.toUpperCase() : lineOpt;
+				found = !lineOpt.contains(exTextOpt);
 			}
 		}
 		
