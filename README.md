@@ -12,9 +12,9 @@ Includes large file viewer
 Screenshots
 -----------
 
-![Screenshot](https://dl.dropboxusercontent.com/u/8069847/logsearch.png)
+![Screenshot](logsearch.png)
 
 Download
 --------
 
-[Runnable jar file (including dependencies)](https://dl.dropboxusercontent.com/u/8069847/logsearchexe.jar)
+[Runnable jar file (including dependencies)](https://www.dropbox.com/s/otjrcgt9kvb83kp/logsearchexe.jar?dl=0)
