@@ -30,14 +30,14 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		LogSearchJFrame instance = new LogSearchJFrame();
 		instance.setLocationRelativeTo(null);
 		instance.setVisible(true);
-		init();
+		FileCache.init();
 	}
 	
 	private final JLabel dirLabel = new JLabel();
 	private final JButton dirButton = new JButton("Directories...");
 	private final JTextField nameTextField = new JTextField(10);
 	private final JTextField containsTextField = new JTextField(20);
-	private final JTextField doesNotContainTextField = new JTextField(20);
+	private final JTextField doesNotContainTextField = new JTextField(15);
 	private final JSpinner startDateSpinner = new JSpinner();
 	private final JSpinner endDateSpinner = new JSpinner();
 	private final JSpinner ageDaysSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
@@ -120,10 +120,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		endDateSpinner.setValue(new Date(prefs.getLong(ENDDATE_PREF, endDate.getTime())));
 		
 		currentDir = new File(prefs.get(CD_PREF, userdir));
-		rangeComboBox.setSelectedItem(prefs.get(RANGE_PREF, MAX_AGE_RANGE));
+		rangeComboBox.setSelectedItem(prefs.get(RANGE_PREF, AGE_RANGE));
 		cacheCheckBox.setSelected(prefs.getBoolean(CACHE_PREF, false));
 		matchesSpinner.setValue(Integer.valueOf(prefs.getInt(MATCHES_PREF, 1000)));
-		countSpinner.setValue(Integer.valueOf(prefs.getInt(COUNT, 100)));
+		countSpinner.setValue(Integer.valueOf(prefs.getInt(COUNT_PREF, 100)));
 	}
 	
 	private void savePrefs () {
@@ -146,7 +146,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		prefs.put(RANGE_PREF, String.valueOf(rangeComboBox.getSelectedItem()));
 		prefs.putBoolean(CACHE_PREF, cacheCheckBox.isSelected());
 		prefs.putInt(MATCHES_PREF, ((Number) matchesSpinner.getValue()).intValue());
-		prefs.putInt(COUNT, ((Number) countSpinner.getValue()).intValue());
+		prefs.putInt(COUNT_PREF, ((Number) countSpinner.getValue()).intValue());
 		try {
 			prefs.flush();
 		} catch (Exception e) {
@@ -163,7 +163,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			}
 		});
 		dirButton.addActionListener(e -> chooseDirs());
-		editorButton.addActionListener(e -> chooseExternalEditor());
+		editorButton.addActionListener(e -> chooseEditor());
 		startButton.addActionListener(e -> search());
 		stopButton.addActionListener(e -> stop());
 		openButton.addActionListener(e -> openInEditor());
@@ -382,12 +382,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 				startDate = (Date) startDateSpinner.getValue();
 				Date endDateInclusive = (Date) endDateSpinner.getValue();
 				endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
-			} else if (range == MAX_AGE_RANGE) {
+			} else if (range == AGE_RANGE) {
 				Calendar cal = new GregorianCalendar();
 				cal.add(Calendar.DATE, -((Number)ageDaysSpinner.getValue()).intValue());
 				cal.add(Calendar.HOUR_OF_DAY, -((Number)ageHoursSpinner.getValue()).intValue());
 				startDate = cal.getTime();
-			} else if (range == MAX_FILES_RANGE) {
+			} else if (range == COUNT_RANGE) {
 				maxFiles = ((Number)countSpinner.getValue()).intValue();
 			}
 			
@@ -430,7 +430,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		charsetComboBox.setModel(new DefaultComboBoxModel<>(LogSearchUtil.charsets()));
 		
-		Vector<String> ranges = new Vector<>(Arrays.asList(ALL_FILES_RANGE, MAX_FILES_RANGE, DATE_RANGE, MAX_AGE_RANGE));
+		Vector<String> ranges = new Vector<>(Arrays.asList(ALL_RANGE, COUNT_RANGE, DATE_RANGE, AGE_RANGE));
 		Collections.sort(ranges);
 		rangeComboBox.setModel(new DefaultComboBoxModel<>(ranges));
 		
@@ -493,25 +493,21 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	/** change the enabled status of the range controls */
 	private void updateRangePanels() {
-		boolean date = false, count = false, age = false;
-		switch ((String)rangeComboBox.getSelectedItem()) {
-			case MAX_AGE_RANGE: age = true; break;
-			case MAX_FILES_RANGE: count = true; break;
-			case DATE_RANGE: date = true; break;
-			case ALL_FILES_RANGE: break;
-			default: throw new RuntimeException();
-		}
+		String range = (String)rangeComboBox.getSelectedItem();
 		
+		boolean date = range.equals(DATE_RANGE);
 		startDateLabel.setEnabled(date);
 		startDateSpinner.setEnabled(date);
 		endDateLabel.setEnabled(date);
 		endDateSpinner.setEnabled(date);
 		
+		boolean age = range.equals(AGE_RANGE);
 		ageDaysLabel.setEnabled(age);
 		ageDaysSpinner.setEnabled(age);
 		ageHoursLabel.setEnabled(age);
 		ageHoursSpinner.setEnabled(age);
 		
+		boolean count = range.equals(COUNT_RANGE);
 		countLabel.setEnabled(count);
 		countSpinner.setEnabled(count);
 		
@@ -633,7 +629,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		}
 	}
 	
-	private void chooseExternalEditor () {
+	private void chooseEditor () {
 		JFileChooser fc = new JFileChooser();
 		if (editorFile != null) {
 			fc.setSelectedFile(editorFile);

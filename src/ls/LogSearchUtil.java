@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.text.*;
 import java.time.Duration;
 import java.util.*;
-import java.util.Map.Entry;
 import java.util.concurrent.*;
 
 import javax.swing.BoxLayout;
@@ -28,9 +27,10 @@ import org.apache.commons.io.IOUtils;
 
 public class LogSearchUtil {
 	
+	public static final ScheduledExecutorService EX = Executors.newScheduledThreadPool(1);
+	
 	public static final long MS_IN_DAY = 1000L * 60 * 60 * 24;
 	public static final long NS_IN_S = 1_000_000_000L;
-	public static final long MAX_CACHE_SIZE = 2_000_0000_0000L;
 	public static final long CONFIRM_SIZE = 50_000_000L;
 	
 	public static final String STARTDATE_PREF = "startdate";
@@ -51,25 +51,19 @@ public class LogSearchUtil {
 	public static final String RANGE_PREF = "range";
 	public static final String CACHE_PREF = "cache";
 	public static final String MATCHES_PREF = "matches";
-	public static final String COUNT = "count";
+	public static final String COUNT_PREF = "count";
 	public static final String AGE_HOURS_PREF = "agehours";
 	
-	public static final String ALL_FILES_RANGE = "All Files";
+	public static final String ALL_RANGE = "All Files";
 	public static final String DATE_RANGE = "Date Range";
-	public static final String MAX_AGE_RANGE = "Max Age";
-	public static final String MAX_FILES_RANGE = "Max Count";
+	public static final String AGE_RANGE = "Max Age";
+	public static final String COUNT_RANGE = "Max Count";
 	
 	private static final String OSX_OPEN = "/usr/bin/open";
 	private static final Map<Object, File> TEMP_FILES = new TreeMap<>();
 	private static final String[] PREFIX = new String[] {
 			"B", "KB", "MB", "GB", "TB", "PB", "EB"
 	};
-	private static final Map<File,CachedFile> CACHED_FILES = new TreeMap<>();
-	private static final ScheduledExecutorService EX = Executors.newScheduledThreadPool(1);
-
-	public static void init() {
-		EX.scheduleAtFixedRate(() -> checkCache(), 1, 1, TimeUnit.MINUTES);
-	}
 	
 	public static void execOpen (File editor, File file, int lineno) throws Exception {
 		String[] args;
@@ -311,77 +305,6 @@ public class LogSearchUtil {
 		}
 		Collections.sort(v);
 		return v;
-	}
-	
-	/**
-	 * get sum of cached data arrays
-	 */
-	private static long cacheSum() {
-		synchronized (CACHED_FILES) {
-			long v = 0;
-			for (CachedFile f : CACHED_FILES.values()) {
-				if (f.data != null) {
-					v += f.data.length;
-				}
-			}
-			return v;
-		}
-	}
-	
-	/**
-	 * return true if cache size less than max
-	 */
-	public static boolean cacheSumOk () {
-		String maxstr = System.getProperty("ls.maxcache");
-		long max;
-		if (maxstr != null && maxstr.length() > 0) {
-			max = Long.parseLong(maxstr);
-		} else {
-			max = MAX_CACHE_SIZE;
-		}
-		return cacheSum() < max;
-	}
-	
-	public static CachedFile getCachedFile (File f) {
-		synchronized (CACHED_FILES) {
-			CachedFile cf = CACHED_FILES.get(f);
-			if (cf != null) {
-				cf.accessedNs = System.nanoTime();
-			}
-			return cf;
-		}
-	}
-	
-	public static CachedFile putCachedFile (File f, CachedFile cf) {
-		synchronized (CACHED_FILES) {
-			cf.accessedNs = System.nanoTime();
-			CACHED_FILES.put(f, cf);
-			return cf;
-		}
-	}
-	
-	/**
-	 * remove expired files from cache
-	 */
-	private static void checkCache () {
-		long t = System.nanoTime() - (NS_IN_S * 60 * 60);
-		synchronized (CACHED_FILES) {
-			Iterator<Entry<File,CachedFile>> i = CACHED_FILES.entrySet().iterator();
-			while (i.hasNext()) {
-				Entry<File, CachedFile> e = i.next();
-				File k = e.getKey();
-				CachedFile v = e.getValue();
-				if (v.accessedNs < t) {
-					System.out.println("expire " + k + " = " + v);
-					i.remove();
-				}
-			}
-			int size = CACHED_FILES.size();
-			if (size > 0) {
-				System.out.println("cache size: " + size + " sum: " + formatSize(cacheSum()));
-			}
-		}
-		System.gc();
 	}
 	
 	private LogSearchUtil() {

@@ -9,11 +9,9 @@ import org.apache.commons.compress.archivers.zip.*;
 import org.apache.commons.compress.compressors.gzip.*;
 import org.apache.commons.io.input.CountingInputStream;
 
-import static ls.LogSearchUtil.*;
-
 public class SearchThread extends Thread {
-
-	public volatile boolean running;
+	
+	public volatile boolean running = true;
 	
 	public SearchListener listener;
 	public Set<File> dirs;
@@ -51,6 +49,7 @@ public class SearchThread extends Thread {
 	private int totalMatches;
 	private int totalFilesFound;
 	private String scanMsg;
+	private long startMs;
 	
 	public SearchThread () {
 		super("SearchThread");
@@ -62,19 +61,18 @@ public class SearchThread extends Thread {
 	public void run () {
 		try {
 			System.out.println("run");
-			validate();
-			running = true;
-			long startns = System.nanoTime();
+			long startNs = System.nanoTime();
+			init();
 			find();
 			scan();
-			long endns = System.nanoTime() - startns;
-			double times = ((double)endns) / NS_IN_S;
-			listener.searchComplete(new SearchCompleteEvent(totalFilesFound, results.size(), times, totalSize, totalMatches));
-
+			long endNs = System.nanoTime() - startNs;
+			double timeS = ((double)endNs) / LogSearchUtil.NS_IN_S;
+			listener.searchComplete(new SearchCompleteEvent(totalFilesFound, results.size(), timeS, totalSize, totalMatches));
+			
 		} catch (Exception e) {
 			e.printStackTrace(System.out);
 			listener.searchError(e.toString());
-
+			
 		} finally {
 			for (ZipFile zf : zipFiles.values()) {
 				ZipFile.closeQuietly(zf);
@@ -82,8 +80,9 @@ public class SearchThread extends Thread {
 			running = false;
 		}
 	}
-
-	private void validate () throws Exception {
+	
+	private void init () throws Exception {
+		startMs = System.currentTimeMillis();
 		if (startDate != null && endDate != null && startDate.compareTo(endDate) >= 0) {
 			throw new Exception("Start date equal to or after end date");
 		}
@@ -114,7 +113,7 @@ public class SearchThread extends Thread {
 			throw new Exception("Exclude text includes text");
 		}
 	}
-
+	
 	private void find () {
 		listener.searchUpdate("finding");
 		for (File dir : dirs) {
@@ -128,15 +127,15 @@ public class SearchThread extends Thread {
 			}
 		}
 	}
-
+	
 	private boolean testName (String name) {
 		return name.length() > 0 && name.toLowerCase().contains(this.filenameLower);
 	}
-
+	
 	private boolean testDate (Date date) {
 		return date != null && (startDate == null || date.compareTo(startDate) >= 0) && (endDate == null || date.compareTo(endDate) < 0);
 	}
-
+	
 	private void findDir (File dir) {
 		for (File file : dir.listFiles()) {
 			checkRunning();
@@ -144,21 +143,21 @@ public class SearchThread extends Thread {
 				if (file.isFile()) {
 					if (file.getName().toLowerCase().endsWith(".zip")) {
 						findZip(file);
-
+						
 					} else {
 						findFile(file);
 					}
-
+					
 				} else if (file.isDirectory()) {
 					findDir(file);
 				}
-
+				
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
 	}
-
+	
 	private void findFile (File file) {
 		if (testName(file.getName())) {
 			FileDate fd = dateParser.getFileDate(file.lastModified(), file.getName());
@@ -168,10 +167,10 @@ public class SearchThread extends Thread {
 			totalFilesFound++;
 		}
 	}
-
+	
 	private void findZip (final File file) throws Exception {
 		System.out.println("find zip " + file);
-
+		
 		// don't close until scan finished
 		ZipFile zf = new ZipFile(file);
 		boolean hasResult = false;
@@ -193,7 +192,7 @@ public class SearchThread extends Thread {
 				totalFilesFound++;
 			}
 		}
-
+		
 		if (hasResult) {
 			zipFiles.put(file, zf);
 		} else {
@@ -203,48 +202,53 @@ public class SearchThread extends Thread {
 	
 	private void scan () {
 		System.out.println("scan");
-
 		for (int n = 0; n < results.size(); n++) {
 			checkRunning();
-			Result result = results.get(n);
 			scanMsg = "scanning " + (n + 1) + " of " + results.size();
-			
-			try {
-				// only scan if required
-				if (textOpt != null || pattern != null || exTextOpt != null || exPattern != null) {
-					if (result.entry != null) {
-						listener.searchUpdate(scanMsg);
-						ZipFile zf = zipFiles.get(result.file);
-						ZipArchiveEntry zae = zf.getEntry(result.entry);
-						if (zf.canReadEntryData(zae)) {
-							try (InputStream is = zf.getInputStream(zae)) {
-								checkRunning();
-								result.matches = scanIS(result, is);
-							}
-						} else {
-							result.error = "Cannot read " + ZipMethod.getMethodByCode(zae.getMethod());
-						}
-
-					} else {
-						try (InputStream is = openIS(result.file)) {
+			Result result = results.get(n);
+			scan2(result);
+			listener.searchResult(result);
+			LogSearchUtil.testSleep();
+		}
+	}
+	
+	/** does not throw Exception except RuntimeException */
+	private void scan2 (Result result) {
+		try {
+			// only scan if required
+			if (textOpt != null || pattern != null || exTextOpt != null || exPattern != null) {
+				if (result.entry != null) {
+					listener.searchUpdate(scanMsg);
+					ZipFile zf = zipFiles.get(result.file);
+					ZipArchiveEntry zae = zf.getEntry(result.entry);
+					if (zf.canReadEntryData(zae)) {
+						try (InputStream is = zf.getInputStream(zae)) {
 							checkRunning();
-							result.matches = scanIS(result, is);
+							result.matches = scan3(result, is);
 						}
+					} else {
+						result.error = "Cannot read " + ZipMethod.getMethodByCode(zae.getMethod());
 					}
+					
 				} else {
-					result.error = "*";
+					try (InputStream is = openIS(result.file)) {
+						checkRunning();
+						result.matches = scan3(result, is);
+					}
 				}
-
-				listener.searchResult(result);
+				
 				System.gc();
-				testSleep();
-
-			} catch (RuntimeException e) {
-				throw e;
-			} catch (Exception e) {
-				System.out.println("could not scan " + result);
-				e.printStackTrace(System.out);
+			} else {
+				result.error = "*";
 			}
+			
+		} catch (RuntimeException e) {
+			throw e;
+			
+		} catch (Exception e) {
+			System.out.println("could not scan " + result);
+			e.printStackTrace(System.out);
+			result.error = e.toString();
 		}
 	}
 	
@@ -252,28 +256,27 @@ public class SearchThread extends Thread {
 	 * open the file, possible adding and retrieving from cache
 	 */
 	private InputStream openIS (File file) throws IOException {
-		CachedFile cf = getCachedFile(file);
-		long mt = System.currentTimeMillis() - 1000L*60*60;
+		CachedFile cf = FileCache.get(file);
+		long modMs = startMs - 1000L*60*60;
 		
 		if (cf != null) {
 			// already cached - check if valid
-			if (cf.len != file.length() || file.lastModified() >= mt) {
+			if (cf.len != file.length() || file.lastModified() >= modMs) {
 				System.out.println("removing from cache: " + cf);
-				cf = putCachedFile(file, new CachedFile());
+				cf = FileCache.put(file, new CachedFile());
 			}
 			
-		} else if (cacheUncompressed && !isCompressed(file.getName()) && file.lastModified() < mt && cacheSumOk()) {
+		} else if (cacheUncompressed && testCache(file, modMs)) {
 			// can cache
 			listener.searchUpdate(scanMsg + " (write to cache)");
 			byte[] a = compress(file);
 			// require improvement
-			if (a.length < file.length()) {
-				cf = putCachedFile(file, new CachedFile(a, file.length()));
-				System.out.println("added to cache: " + cf);
+			if (a.length <= (file.length() / 2)) {
+				cf = FileCache.put(file, new CachedFile(a, file.length()));
 			} else {
-				System.out.println("not adding to cache: " + cf);
-				cf = putCachedFile(file, new CachedFile());
+				cf = FileCache.put(file, new CachedFile());
 			}
+			System.out.println("added to cache: " + cf);
 		}
 		
 		if (cf != null && cf.data != null) {
@@ -285,7 +288,12 @@ public class SearchThread extends Thread {
 			return new FileInputStream(file);
 		}
 	}
-
+	
+	/** true if file can be cached */
+	private boolean testCache (File file, long modMs) {
+		return !LogSearchUtil.isCompressed(file.getName()) && file.lastModified() < modMs && file.length() > 1_000_000 && FileCache.sumOk();
+	}
+	
 	private byte[] compress (File file) throws IOException {
 		try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
 			GzipParameters p = new GzipParameters();
@@ -309,57 +317,59 @@ public class SearchThread extends Thread {
 		}
 		totalSize += total;
 	}
-
-	private int scanIS (final Result result, final InputStream is) throws Exception {
+	
+	private int scan3 (final Result result, final InputStream is) throws Exception {
 		final List<String> backward = new ArrayList<>();
 		int forward = 0;
 		int matches = 0;
 		
-		try (CountingInputStream cis = new CountingInputStream(uncompressedInputStream(result.name, new BufferedInputStream(is)))) {
-			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, charset))) {
-				int lineno = 1;
-				String line;
-				
-				while ((line = br.readLine()) != null) {
-					checkRunning();
+		try (InputStream uis = LogSearchUtil.uncompressedInputStream(result.name, new BufferedInputStream(is))) {
+			try (CountingInputStream cis = new CountingInputStream(uis)) {
+				try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, charset))) {
+					int lineno = 1;
+					String line;
 					
-					if (forward > 0) {
-						result.lines.put(lineno, line);
-						forward--;
-					}
-					
-					if (testLine(line)) {
-						matches++;
-						for (int n = 0; n < backward.size(); n++) {
-							// backward = [l-3] [l-2] [l-1]
-							result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
+					while ((line = br.readLine()) != null) {
+						checkRunning();
+						
+						if (forward > 0) {
+							result.lines.put(lineno, line);
+							forward--;
 						}
-						result.lines.put(lineno, line);
-						forward = contextLinesAfter;
-					}
-					
-					if (contextLinesBefore > 0) {
-						if (backward.size() >= contextLinesBefore) {
-							backward.remove(0);
+						
+						if (testLine(line)) {
+							matches++;
+							for (int n = 0; n < backward.size(); n++) {
+								// backward = [l-3] [l-2] [l-1]
+								result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
+							}
+							result.lines.put(lineno, line);
+							forward = contextLinesAfter;
 						}
-						backward.add(line);
+						
+						if (contextLinesBefore > 0) {
+							if (backward.size() >= contextLinesBefore) {
+								backward.remove(0);
+							}
+							backward.add(line);
+						}
+						
+						if (maxMatches > 0 && matches >= maxMatches) {
+							break;
+						}
+						
+						lineno++;
 					}
-					
-					if (maxMatches > 0 && matches >= maxMatches) {
-						break;
-					}
-					
-					lineno++;
 				}
+				
+				totalSize += cis.getByteCount();
+				totalMatches += matches;
 			}
-			
-			totalSize += cis.getByteCount();
-			totalMatches += matches;
 		}
-
+		
 		return matches;
 	}
-
+	
 	private boolean testLine (String line) {
 		boolean found = false;
 		String lineOpt = null;
@@ -384,11 +394,11 @@ public class SearchThread extends Thread {
 		
 		return found;
 	}
-
+	
 	private void checkRunning() {
 		if (!running) {
 			throw new RuntimeException("stopped");
 		}
 	}
-
+	
 }
