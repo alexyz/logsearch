@@ -46,6 +46,7 @@ public class SearchThread extends Thread {
 	private String textOpt;
 	/** exText depending on ignoreCase, null if no exText */
 	private String exTextOpt;
+	/** bytes scanned and cached */
 	private long totalSize;
 	private int totalMatches;
 	private int totalFilesFound;
@@ -162,7 +163,7 @@ public class SearchThread extends Thread {
 		if (testName(file.getName())) {
 			FileDate fd = dateParser.getFileDate(file.lastModified(), file.getName());
 			if (testDate(fd.date)) {
-				results.add(new Result(file, fd, null));
+				results.add(new Result(file, fd, null, file.length()));
 			}
 			totalFilesFound++;
 		}
@@ -186,7 +187,7 @@ public class SearchThread extends Thread {
 			if (testName(name)) {
 				FileDate fd = dateParser.getFileDate(ze.getTime(), name);
 				if (testDate(fd.date)) {
-					results.add(new Result(file, fd, ze.getName()));
+					results.add(new Result(file, fd, ze.getName(), ze.getCompressedSize()));
 					hasResult = true;
 				}
 				totalFilesFound++;
@@ -212,32 +213,26 @@ public class SearchThread extends Thread {
 				// only scan if required
 				if (textOpt != null || pattern != null || exTextOpt != null || exPattern != null) {
 					if (result.entry != null) {
-						listener.searchUpdate(scanMsg + " (zip entry)");
+						listener.searchUpdate(scanMsg);
 						ZipFile zf = zipFiles.get(result.file);
 						ZipArchiveEntry zae = zf.getEntry(result.entry);
 						if (zf.canReadEntryData(zae)) {
 							try (InputStream is = zf.getInputStream(zae)) {
 								checkRunning();
-								final int i = scanIS(result, result.entry, is);
-								if (i > 0) {
-									result.matches = Integer.valueOf(i);
-								}
+								result.matches = scanIS(result, is);
 							}
 						} else {
-							result.matches = "Cannot read " + ZipMethod.getMethodByCode(zae.getMethod());
+							result.error = "Cannot read " + ZipMethod.getMethodByCode(zae.getMethod());
 						}
 
 					} else {
 						try (InputStream is = openIS(result.file)) {
 							checkRunning();
-							int i = scanIS(result, result.file.getName(), is);
-							if (i > 0) {
-								result.matches = Integer.valueOf(i);
-							}
+							result.matches = scanIS(result, is);
 						}
 					}
 				} else {
-					result.matches = "*";
+					result.error = "*";
 				}
 
 				listener.searchResult(result);
@@ -269,38 +264,42 @@ public class SearchThread extends Thread {
 			
 		} else if (cacheUncompressed && !isCompressed(file.getName()) && file.lastModified() < mt && cacheSumOk()) {
 			// can cache
-			listener.searchUpdate(scanMsg + " (adding to cache)");
-			try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-				GzipParameters p = new GzipParameters();
-				p.setCompressionLevel(1);
-				long len;
-				try (GzipCompressorOutputStream gos = new GzipCompressorOutputStream(bos, p)) {
-					try (FileInputStream fis = new FileInputStream(file)) {
-						len = copyIS(fis, gos);
-					}
-				}
-				byte[] a = bos.toByteArray();
-				// require improvement
-				if (a.length < len) {
-					cf = putCachedFile(file, new CachedFile(a, len));
-					System.out.println("added to cache: " + cf);
-				} else {
-					System.out.println("not adding to cache: " + cf);
-					cf = putCachedFile(file, new CachedFile());
-				}
+			listener.searchUpdate(scanMsg + " (write to cache)");
+			byte[] a = compress(file);
+			// require improvement
+			if (a.length < file.length()) {
+				cf = putCachedFile(file, new CachedFile(a, file.length()));
+				System.out.println("added to cache: " + cf);
+			} else {
+				System.out.println("not adding to cache: " + cf);
+				cf = putCachedFile(file, new CachedFile());
 			}
 		}
 		
 		if (cf != null && cf.data != null) {
 			listener.searchUpdate(scanMsg + " (read from cache)");
 			return new GzipCompressorInputStream(new ByteArrayInputStream(cf.data));
+			
 		} else {
 			listener.searchUpdate(scanMsg);
 			return new FileInputStream(file);
 		}
 	}
+
+	private byte[] compress (File file) throws IOException {
+		try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+			GzipParameters p = new GzipParameters();
+			p.setCompressionLevel(1);
+			try (GzipCompressorOutputStream gos = new GzipCompressorOutputStream(bos, p)) {
+				try (FileInputStream fis = new FileInputStream(file)) {
+					copyIS(fis, gos);
+				}
+			}
+			return bos.toByteArray();
+		}
+	}
 	
-	private long copyIS (InputStream is, OutputStream os) throws IOException {
+	private void copyIS (InputStream is, OutputStream os) throws IOException {
 		long total = 0;
 		int i;
 		while ((i = is.read(buffer)) > 0) {
@@ -308,15 +307,15 @@ public class SearchThread extends Thread {
 			os.write(buffer, 0, i);
 			total += i;
 		}
-		return total;
+		totalSize += total;
 	}
 
-	private int scanIS (final Result result, String name, final InputStream is) throws Exception {
+	private int scanIS (final Result result, final InputStream is) throws Exception {
 		final List<String> backward = new ArrayList<>();
 		int forward = 0;
 		int matches = 0;
 		
-		try (CountingInputStream cis = new CountingInputStream(uncompressedInputStream(name, new BufferedInputStream(is)))) {
+		try (CountingInputStream cis = new CountingInputStream(uncompressedInputStream(result.name, new BufferedInputStream(is)))) {
 			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, charset))) {
 				int lineno = 1;
 				String line;
@@ -347,7 +346,6 @@ public class SearchThread extends Thread {
 					}
 					
 					if (maxMatches > 0 && matches >= maxMatches) {
-						System.out.println("too many matches");
 						break;
 					}
 					
@@ -355,9 +353,7 @@ public class SearchThread extends Thread {
 				}
 			}
 			
-			long count = cis.getByteCount();
-			result.size = count;
-			totalSize += count;
+			totalSize += cis.getByteCount();
 			totalMatches += matches;
 		}
 

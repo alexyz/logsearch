@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.*;
 import java.time.Duration;
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.concurrent.*;
 
 import javax.swing.BoxLayout;
@@ -29,6 +30,8 @@ public class LogSearchUtil {
 	
 	public static final long MS_IN_DAY = 1000L * 60 * 60 * 24;
 	public static final long NS_IN_S = 1_000_000_000L;
+	public static final long MAX_CACHE_SIZE = 2_000_0000_0000L;
+	public static final long CONFIRM_SIZE = 50_000_000L;
 	
 	public static final String STARTDATE_PREF = "startdate";
 	public static final String ENDDATE_PREF = "enddate";
@@ -65,7 +68,7 @@ public class LogSearchUtil {
 	private static final ScheduledExecutorService EX = Executors.newScheduledThreadPool(1);
 
 	public static void init() {
-		EX.schedule(() -> updateCache(), 1, TimeUnit.MINUTES);
+		EX.scheduleAtFixedRate(() -> checkCache(), 1, 1, TimeUnit.MINUTES);
 	}
 	
 	public static void execOpen (File editor, File file, int lineno) throws Exception {
@@ -96,34 +99,22 @@ public class LogSearchUtil {
 	}
 	
 	/**
-	 * return uncompressed size of result (if it was compressed)
+	 * get original file if not compressed, otherwise optionally decompress to temp file
 	 */
-	public static long getTempFileSize (final Result result) {
-		File tf = TEMP_FILES.get(result.key());
-		if (tf == null && (result.entry != null || isCompressed(result.file.getName()))) {
-			return result.size;
-		} else {
-			return 0;
-		}
-	}
-	
-	/**
-	 * get original file if not compressed, otherwise decompress to temp file
-	 */
-	public static File getOrCreateFile (final Result result) throws Exception {
-		File f;
-		if (result.entry != null) {
-			f = TEMP_FILES.get(result.key());
-			if (f == null) {
-				TEMP_FILES.put(result.key(), f = entryToFile(result, createTempFile(result)));
+	public static File getOrCreateFile (final Result result, boolean create) throws Exception {
+		File f = TEMP_FILES.get(result.key());
+		if (f == null) {
+			if (result.entry != null) {
+				if (create) {
+					TEMP_FILES.put(result.key(), f = entryToFile(result, createTempFile(result)));
+				}
+			} else if (isCompressed(result.file.getName())) {
+				if (create) {
+					TEMP_FILES.put(result.key(), f = nonEntryToFile(result, createTempFile(result)));
+				}
+			} else {
+				f = result.file;
 			}
-		} else if (isCompressed(result.file.getName())) {
-			f = TEMP_FILES.get(result.key());
-			if (f == null) {
-				TEMP_FILES.put(result.key(), f = decompressToFile(result, createTempFile(result)));
-			}
-		} else {
-			f = result.file;
 		}
 		return f;
 	}
@@ -135,13 +126,13 @@ public class LogSearchUtil {
 		if (result.entry != null) {
 			entryToFile(result, destFile);
 		} else if (isCompressed(result.file.getName())) {
-			decompressToFile(result, destFile);
+			nonEntryToFile(result, destFile);
 		} else {
 			FileUtils.copyFile(result.file, destFile);
 		}
 	}
 
-	private static File decompressToFile (final Result result, final File destFile) throws Exception {
+	private static File nonEntryToFile (final Result result, final File destFile) throws Exception {
 		try (InputStream is = uncompressedInputStream(result.file.getName(), new BufferedInputStream(new FileInputStream(result.file)))) {
 			return writeFile(destFile, is);
 		}
@@ -346,7 +337,7 @@ public class LogSearchUtil {
 		if (maxstr != null && maxstr.length() > 0) {
 			max = Long.parseLong(maxstr);
 		} else {
-			max = 1_000_0000_0000L;
+			max = MAX_CACHE_SIZE;
 		}
 		return cacheSum() < max;
 	}
@@ -369,21 +360,28 @@ public class LogSearchUtil {
 		}
 	}
 	
-	private static void updateCache () {
-		long t = System.nanoTime() - NS_IN_S * 60 * 60;
+	/**
+	 * remove expired files from cache
+	 */
+	private static void checkCache () {
+		long t = System.nanoTime() - (NS_IN_S * 60 * 60);
 		synchronized (CACHED_FILES) {
-			Iterator<CachedFile> i = CACHED_FILES.values().iterator();
+			Iterator<Entry<File,CachedFile>> i = CACHED_FILES.entrySet().iterator();
 			while (i.hasNext()) {
-				CachedFile cf = i.next();
-				if (cf.accessedNs < t) {
+				Entry<File, CachedFile> e = i.next();
+				File k = e.getKey();
+				CachedFile v = e.getValue();
+				if (v.accessedNs < t) {
+					System.out.println("expire " + k + " = " + v);
 					i.remove();
 				}
 			}
 			int size = CACHED_FILES.size();
 			if (size > 0) {
-				System.out.println("cache size: " + size + " sum: " + cacheSum());
+				System.out.println("cache size: " + size + " sum: " + formatSize(cacheSum()));
 			}
 		}
+		System.gc();
 	}
 	
 	private LogSearchUtil() {

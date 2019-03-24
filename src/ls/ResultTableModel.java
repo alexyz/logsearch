@@ -29,7 +29,7 @@ public class ResultTableModel extends AbstractTableModel {
 	public void add (Result fd) {
 		results.add(fd);
 		Collections.sort(results);
-		if (fd.lines.size() > 0 || fd.matches != null) {
+		if (fd.lines.size() > 0 || fd.matches > 0 || fd.error != null) {
 			matchingResults.add(fd);
 			Collections.sort(matchingResults);
 		}
@@ -96,9 +96,9 @@ public class ResultTableModel extends AbstractTableModel {
 			case 1:
 				return r.name();
 			case 2:
-				return LogSearchUtil.formatSize(r.size);
+				return LogSearchUtil.formatSize(r.pSize);
 			case 3:
-				return r.matches != null ? r.matches : "";
+				return r.matches > 0 ? String.valueOf(r.matches) : r.error;
 			default:
 				return null;
 		}

@@ -17,16 +17,20 @@ public class Result implements Comparable<Result> {
 	public final File file;
 	/** zip file entry name */
 	public final String entry;
+	/** size on disk */
+	public final long pSize;
 	
 	// updated during search
-	/** match description (null for no match, or number of lines, or error etc) */
-	public Object matches;
-	public long size;
-
-	public Result(File file, FileDate date, String entry) {
+	/** number of lines matches */
+	public int matches;
+	/** message if no matches */
+	public String error;
+	
+	public Result(File file, FileDate date, String entry, long pSize) {
 		this.file = file;
 		this.fileDate = date;
 		this.entry = entry;
+		this.pSize = pSize;
 		if (entry != null) {
 			int i = entry.lastIndexOf("/");
 			if (i >= 0 && i < entry.length()) {
@@ -37,7 +41,7 @@ public class Result implements Comparable<Result> {
 			this.name = file.getName();
 		}
 	}
-
+	
 	/** human readable name of file plus name of zip file if any */
 	public String name () {
 		if (entry != null) {
@@ -46,7 +50,7 @@ public class Result implements Comparable<Result> {
 			return name;
 		}
 	}
-
+	
 	/** key representing result */
 	public Object key () {
 		if (entry != null) {
@@ -55,7 +59,7 @@ public class Result implements Comparable<Result> {
 			return file.getAbsolutePath();
 		}
 	}
-
+	
 	/** name of temp file */
 	public String suggestedFileName () {
 		if (entry != null) {
@@ -64,7 +68,7 @@ public class Result implements Comparable<Result> {
 			return name;
 		}
 	}
-
+	
 	@Override
 	public int compareTo (Result o) {
 		CompareToBuilder cb = new CompareToBuilder();
@@ -72,10 +76,10 @@ public class Result implements Comparable<Result> {
 		cb.append(name.toLowerCase(), o.name.toLowerCase());
 		return cb.toComparison();
 	}
-
+	
 	@Override
 	public String toString () {
 		return "Result [lines=" + lines.size() + " name=" + name + " date=" + fileDate + " file=" + file + " entry=" + entry + " matches=" + matches + "]";
 	}
-
+	
 }

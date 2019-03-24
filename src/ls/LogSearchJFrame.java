@@ -196,8 +196,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			int r = table.getSelectedRow();
 			if (r >= 0) {
 				Result result = tableModel.getResult(r);
-				if (confirmGetFile(result, "View")) {
-					File file = LogSearchUtil.getOrCreateFile(result);
+				File file = getOrCreateFileConfirm(result, "View");
+				if (file != null) {
 					ViewJFrame dialog = new ViewJFrame(this, file, charset(), containsTextField.getText(), ignoreCaseCheckBox.isSelected(), regexCheckBox.isSelected());
 					dialog.setVisible(true);
 				}
@@ -208,14 +208,16 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		}
 	}
 	
-	/** confirm file create over 250MB */
-	private boolean confirmGetFile (final Result result, final String title) throws Exception {
-		long ts = LogSearchUtil.getTempFileSize(result);
-		if (ts > 250_000_000L) {
-			return JOptionPane.showConfirmDialog(this, "Create temp file " + formatSize(ts) + "?", title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION;
-		} else {
-			return true;
+	/** confirm file create over 25MB compressed */
+	private File getOrCreateFileConfirm (final Result result, final String title) throws Exception {
+		File file = getOrCreateFile(result, false);
+		if (file == null) {
+			String msg = "Create large temp file from " + result.name + " size " + formatSize(result.pSize) + "?";
+			if (result.pSize < CONFIRM_SIZE || JOptionPane.showConfirmDialog(this, msg, title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+				file = getOrCreateFile(result, true);
+			}
 		}
+		return file;
 	}
 	
 	private Charset charset () {
@@ -313,8 +315,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			int r = table.getSelectedRow();
 			if (r >= 0) {
 				Result result = tableModel.getResult(r);
-				if (confirmGetFile(result, "Open")) {
-					File file = getOrCreateFile(result);
+				File file = getOrCreateFileConfirm(result, "Open");
+				if (file != null) {
 					int lineno = 0;
 					if (result.lines.size() > 0) {
 						lineno = result.lines.keySet().iterator().next().intValue();
