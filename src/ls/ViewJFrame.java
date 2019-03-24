@@ -24,8 +24,7 @@ import javax.swing.text.Highlighter;
 import org.apache.commons.lang3.StringEscapeUtils;
 
 /**
- * view large files cant use custom document/content - still need to scan for
- * lines
+ * view large files by not bothering with line breaks
  */
 public class ViewJFrame extends JFrame {
 	
@@ -47,8 +46,6 @@ public class ViewJFrame extends JFrame {
 	private long searchOffset;
 	private boolean offsetAdjusting;
 	
-	// [text] [ci] [rx] previous next
-	
 	public ViewJFrame(final JFrame frame, File file, Charset charset, String text, boolean ignoreCase, boolean regex) throws Exception {
 		super("View " + file.getName());
 		this.charset = charset;
@@ -62,7 +59,7 @@ public class ViewJFrame extends JFrame {
 				try {
 					raFile.close();
 				} catch (IOException e1) {
-					e1.printStackTrace();
+					e1.printStackTrace(System.out);
 				}
 			}
 		});

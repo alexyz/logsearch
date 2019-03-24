@@ -6,31 +6,35 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 import org.apache.commons.compress.archivers.zip.*;
+import org.apache.commons.compress.compressors.gzip.*;
+import org.apache.commons.io.input.CountingInputStream;
 
 import static ls.LogSearchUtil.*;
 
 public class SearchThread extends Thread {
 
-	private static final int MAX_MATCHES = 1000;
-
 	public volatile boolean running;
+	
+	public SearchListener listener;
+	public Set<File> dirs;
+	public Date startDate;
+	public Date endDate;
+	public int contextLinesBefore;
+	public int contextLinesAfter;
+	public FileDater dateParser;
+	public Charset charset;
+	public String filenameLower;
+	public String text;
+	public String exText;
+	public boolean ignoreCase;
+	public boolean regex;
+	public boolean cacheUncompressed;
+	public int maxFiles;
+	public int maxMatches;
 	
 	private final List<Result> results = new ArrayList<>();
 	private final Map<File,ZipFile> zipFiles = new TreeMap<>();
-	private final SearchListener listener;
-	
-	private Set<File> dirs;
-	private Date startDate;
-	private Date endDate;
-	private int contextLinesBefore;
-	private int contextLinesAfter;
-	private FileDater dateParser;
-	private Charset charset;
-	private String filenameLower;
-	private String text;
-	private String exText;
-	private boolean ignoreCase;
-	private boolean regex;
+	private final byte[] buffer = new byte[65536];
 	
 	// variables assigned in run
 	
@@ -42,114 +46,32 @@ public class SearchThread extends Thread {
 	private String textOpt;
 	/** exText depending on ignoreCase, null if no exText */
 	private String exTextOpt;
-	private long totalCount;
-
-	public SearchThread (SearchListener listener) {
+	private long totalSize;
+	private int totalMatches;
+	private int totalFilesFound;
+	private String scanMsg;
+	
+	public SearchThread () {
 		super("SearchThread");
 		setPriority(Thread.MIN_PRIORITY);
 		setDaemon(true);
-		this.listener = listener;
 	}
 	
-	public void setDateParser (FileDater dateParser) {
-		this.dateParser = dateParser;
-	}
-	
-	public void setCharset (Charset charset) {
-		this.charset = charset;
-	}
-	
-	public void setDirs (Set<File> dirs) {
-		this.dirs = dirs;
-	}
-	
-	public void setContextLinesBefore (int contextLinesBefore) {
-		this.contextLinesBefore = contextLinesBefore;
-	}
-	
-	public void setContextLinesAfter (int contextLinesAfter) {
-		this.contextLinesAfter = contextLinesAfter;
-	}
-	
-	public void setStartDate (Date startDate) {
-		this.startDate = startDate;
-	}
-	
-	public void setEndDate (Date endDate) {
-		this.endDate = endDate;
-	}
-	
-	public void setFilename(String name) {
-		this.filenameLower = name.toLowerCase();
-	}
-	
-	public void setText(String text) {
-		this.text = text;
-	}
-	
-	public void setExText (String exText) {
-		this.exText = exText;
-	}
-	
-	public void setIgnoreCase (boolean ignoreCase) {
-		this.ignoreCase = ignoreCase;
-	}
-	
-	public void setRegex (boolean regex) {
-		this.regex = regex;
-	}
-
 	@Override
 	public void run () {
 		try {
 			System.out.println("run");
-			if (startDate != null && endDate != null && startDate.compareTo(endDate) >= 0) {
-				throw new Exception("Start date equal to or after end date");
-			}
-			if (filenameLower.length() == 0) {
-				throw new Exception("No file name filter");
-			}
-			if (text == null || exText == null) {
-				throw new Exception("No text");
-			}
-			if (dirs == null || dirs.size() == 0) {
-				throw new Exception("No dirs");
-			}
-			if (text.length() > 0) {
-				if (regex) {
-					pattern = Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0);
-				} else {
-					textOpt = ignoreCase ? text.toUpperCase() : text;
-				}
-			}
-			if (exText.length() > 0) {
-				if (regex) {	
-					exPattern = Pattern.compile(exText, ignoreCase ? Pattern.CASE_INSENSITIVE : 0);
-				} else {
-					exTextOpt = ignoreCase ? exText.toUpperCase() : exText;
-				}
-			}
-			if (textOpt != null && textOpt.length() > 0 && exTextOpt != null && exTextOpt.length() > 0 && textOpt.contains(exTextOpt)) {
-				throw new Exception("Exclude text includes text");
-			}
-			
+			validate();
 			running = true;
-			listener.searchUpdate("finding");
-			long t = System.nanoTime();
-			for (File dir : dirs) {
-				if (!running) {
-					break;
-				}
-				findDir(dir);
-			}
-			Collections.sort(results);
+			long startns = System.nanoTime();
+			find();
 			scan();
-			long tns = System.nanoTime() - t;
-			double ts = tns / 1_000_000_000.0;
-			listener.searchComplete(new SearchCompleteEvent(results.size(), ts, totalCount));
+			long endns = System.nanoTime() - startns;
+			double times = ((double)endns) / NS_IN_S;
+			listener.searchComplete(new SearchCompleteEvent(totalFilesFound, results.size(), times, totalSize, totalMatches));
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			e.printStackTrace(System.out);
 			listener.searchError(e.toString());
 
 		} finally {
@@ -160,8 +82,54 @@ public class SearchThread extends Thread {
 		}
 	}
 
+	private void validate () throws Exception {
+		if (startDate != null && endDate != null && startDate.compareTo(endDate) >= 0) {
+			throw new Exception("Start date equal to or after end date");
+		}
+		if (filenameLower.length() == 0) {
+			throw new Exception("No file name filter");
+		}
+		if (text == null || exText == null) {
+			throw new Exception("No text");
+		}
+		if (dirs == null || dirs.size() == 0) {
+			throw new Exception("No dirs");
+		}
+		if (text.length() > 0) {
+			if (regex) {
+				pattern = Pattern.compile(text, ignoreCase ? Pattern.CASE_INSENSITIVE : 0);
+			} else {
+				textOpt = ignoreCase ? text.toUpperCase() : text;
+			}
+		}
+		if (exText.length() > 0) {
+			if (regex) {	
+				exPattern = Pattern.compile(exText, ignoreCase ? Pattern.CASE_INSENSITIVE : 0);
+			} else {
+				exTextOpt = ignoreCase ? exText.toUpperCase() : exText;
+			}
+		}
+		if (textOpt != null && textOpt.length() > 0 && exTextOpt != null && exTextOpt.length() > 0 && textOpt.contains(exTextOpt)) {
+			throw new Exception("Exclude text includes text");
+		}
+	}
+
+	private void find () {
+		listener.searchUpdate("finding");
+		for (File dir : dirs) {
+			checkRunning();
+			findDir(dir);
+		}
+		Collections.sort(results);
+		if (maxFiles > 0) {
+			while (results.size() > maxFiles) {
+				results.remove(results.size() - 1);
+			}
+		}
+	}
+
 	private boolean testName (String name) {
-		return name.toLowerCase().contains(this.filenameLower);
+		return name.length() > 0 && name.toLowerCase().contains(this.filenameLower);
 	}
 
 	private boolean testDate (Date date) {
@@ -170,9 +138,7 @@ public class SearchThread extends Thread {
 
 	private void findDir (File dir) {
 		for (File file : dir.listFiles()) {
-			if (!running) {
-				break;
-			}
+			checkRunning();
 			try {
 				if (file.isFile()) {
 					if (file.getName().toLowerCase().endsWith(".zip")) {
@@ -194,10 +160,11 @@ public class SearchThread extends Thread {
 
 	private void findFile (File file) {
 		if (testName(file.getName())) {
-			Date date = dateParser.getFileDate(file.lastModified(), file.getName());
-			if (testDate(date)) {
-				results.add(new Result(file, date, null));
+			FileDate fd = dateParser.getFileDate(file.lastModified(), file.getName());
+			if (testDate(fd.date)) {
+				results.add(new Result(file, fd, null));
 			}
+			totalFilesFound++;
 		}
 	}
 
@@ -207,48 +174,51 @@ public class SearchThread extends Thread {
 		// don't close until scan finished
 		ZipFile zf = new ZipFile(file);
 		boolean hasResult = false;
-
 		Enumeration<ZipArchiveEntry> e = zf.getEntries();
-		while (running && e.hasMoreElements()) {
+		
+		while (e.hasMoreElements()) {
+			checkRunning();
 			ZipArchiveEntry ze = e.nextElement();
 			String name = ze.getName();
 			if (name.contains("/")) {
 				name = name.substring(name.lastIndexOf("/") + 1);
 			}
-
 			if (testName(name)) {
-				Date date = dateParser.getFileDate(ze.getTime(), name);
-				if (testDate(date)) {
-					results.add(new Result(file, date, ze.getName()));
+				FileDate fd = dateParser.getFileDate(ze.getTime(), name);
+				if (testDate(fd.date)) {
+					results.add(new Result(file, fd, ze.getName()));
 					hasResult = true;
 				}
+				totalFilesFound++;
 			}
 		}
 
 		if (hasResult) {
 			zipFiles.put(file, zf);
-
 		} else {
 			ZipFile.closeQuietly(zf);
 		}
 	}
-
+	
 	private void scan () {
 		System.out.println("scan");
 
-		for (int n = 0; running && n < results.size(); n++) {
-			listener.searchUpdate("scanning " + (n + 1) + " of " + results.size());
+		for (int n = 0; n < results.size(); n++) {
+			checkRunning();
 			Result result = results.get(n);
-
+			scanMsg = "scanning " + (n + 1) + " of " + results.size();
+			
 			try {
 				// only scan if required
 				if (textOpt != null || pattern != null || exTextOpt != null || exPattern != null) {
 					if (result.entry != null) {
+						listener.searchUpdate(scanMsg + " (zip entry)");
 						ZipFile zf = zipFiles.get(result.file);
-						final ZipArchiveEntry zae = zf.getEntry(result.entry);
+						ZipArchiveEntry zae = zf.getEntry(result.entry);
 						if (zf.canReadEntryData(zae)) {
 							try (InputStream is = zf.getInputStream(zae)) {
-								final int i = scanInputStream(result, result.entry, is);
+								checkRunning();
+								final int i = scanIS(result, result.entry, is);
 								if (i > 0) {
 									result.matches = Integer.valueOf(i);
 								}
@@ -258,8 +228,9 @@ public class SearchThread extends Thread {
 						}
 
 					} else {
-						try (InputStream is = new FileInputStream(result.file)) {
-							int i = scanInputStream(result, result.file.getName(), is);
+						try (InputStream is = openIS(result.file)) {
+							checkRunning();
+							int i = scanIS(result, result.file.getName(), is);
 							if (i > 0) {
 								result.matches = Integer.valueOf(i);
 							}
@@ -270,66 +241,125 @@ public class SearchThread extends Thread {
 				}
 
 				listener.searchResult(result);
+				System.gc();
+				testSleep();
 
+			} catch (RuntimeException e) {
+				throw e;
 			} catch (Exception e) {
-				e.printStackTrace();
+				System.out.println("could not scan " + result);
+				e.printStackTrace(System.out);
 			}
 		}
 	}
-
-	private int scanInputStream (final Result result, String name, InputStream is) throws Exception {
-		System.out.println("scan " + name);
-
-		try (InputStream is2 = uncompressedInputStream(name, new BufferedInputStream(is))) {
-			return scanInputStream2(result, is2);
-		} finally {
-			System.gc();
-		}
-	}
-
-	private int scanInputStream2 (final Result result, final InputStream is) throws Exception {
-		final List<String> backward = new ArrayList<>();
-		int forward = 0;
-		int matches = 0;
-
-		LineCountingInputStream lcis;
-		try (BufferedReader br = new BufferedReader(new InputStreamReader(lcis = new LineCountingInputStream(is), charset))) {
-			int lineno = 1;
-			String line;
-
-			while (running && (line = br.readLine()) != null) {
-				if (forward > 0) {
-					result.lines.put(lineno, line);
-					forward--;
-				}
-
-				if (testLine(line)) {
-					matches++;
-					for (int n = 0; n < backward.size(); n++) {
-						// backward = [l-3] [l-2] [l-1]
-						result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
+	
+	/**
+	 * open the file, possible adding and retrieving from cache
+	 */
+	private InputStream openIS (File file) throws IOException {
+		CachedFile cf = getCachedFile(file);
+		long mt = System.currentTimeMillis() - 1000L*60*60;
+		
+		if (cf != null) {
+			// already cached - check if valid
+			if (cf.len != file.length() || file.lastModified() >= mt) {
+				System.out.println("removing from cache: " + cf);
+				cf = putCachedFile(file, new CachedFile());
+			}
+			
+		} else if (cacheUncompressed && !isCompressed(file.getName()) && file.lastModified() < mt && cacheSumOk()) {
+			// can cache
+			listener.searchUpdate(scanMsg + " (adding to cache)");
+			try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+				GzipParameters p = new GzipParameters();
+				p.setCompressionLevel(1);
+				long len;
+				try (GzipCompressorOutputStream gos = new GzipCompressorOutputStream(bos, p)) {
+					try (FileInputStream fis = new FileInputStream(file)) {
+						len = copyIS(fis, gos);
 					}
-					result.lines.put(lineno, line);
-					forward = contextLinesAfter;
 				}
-
-				if (contextLinesBefore > 0) {
-					if (backward.size() >= contextLinesBefore) {
-						backward.remove(0);
-					}
-					backward.add(line);
+				byte[] a = bos.toByteArray();
+				// require improvement
+				if (a.length < len) {
+					cf = putCachedFile(file, new CachedFile(a, len));
+					System.out.println("added to cache: " + cf);
+				} else {
+					System.out.println("not adding to cache: " + cf);
+					cf = putCachedFile(file, new CachedFile());
 				}
-
-				if (matches >= MAX_MATCHES) {
-					System.out.println("too many matches");
-					break;
-				}
-
-				lineno++;
 			}
 		}
 		
-		totalCount += lcis.count;
+		if (cf != null && cf.data != null) {
+			listener.searchUpdate(scanMsg + " (read from cache)");
+			return new GzipCompressorInputStream(new ByteArrayInputStream(cf.data));
+		} else {
+			listener.searchUpdate(scanMsg);
+			return new FileInputStream(file);
+		}
+	}
+	
+	private long copyIS (InputStream is, OutputStream os) throws IOException {
+		long total = 0;
+		int i;
+		while ((i = is.read(buffer)) > 0) {
+			checkRunning();
+			os.write(buffer, 0, i);
+			total += i;
+		}
+		return total;
+	}
+
+	private int scanIS (final Result result, String name, final InputStream is) throws Exception {
+		final List<String> backward = new ArrayList<>();
+		int forward = 0;
+		int matches = 0;
+		
+		try (CountingInputStream cis = new CountingInputStream(uncompressedInputStream(name, new BufferedInputStream(is)))) {
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(cis, charset))) {
+				int lineno = 1;
+				String line;
+				
+				while ((line = br.readLine()) != null) {
+					checkRunning();
+					
+					if (forward > 0) {
+						result.lines.put(lineno, line);
+						forward--;
+					}
+					
+					if (testLine(line)) {
+						matches++;
+						for (int n = 0; n < backward.size(); n++) {
+							// backward = [l-3] [l-2] [l-1]
+							result.lines.put(lineno - 1 - n, backward.get(backward.size() - 1 - n));
+						}
+						result.lines.put(lineno, line);
+						forward = contextLinesAfter;
+					}
+					
+					if (contextLinesBefore > 0) {
+						if (backward.size() >= contextLinesBefore) {
+							backward.remove(0);
+						}
+						backward.add(line);
+					}
+					
+					if (maxMatches > 0 && matches >= maxMatches) {
+						System.out.println("too many matches");
+						break;
+					}
+					
+					lineno++;
+				}
+			}
+			
+			long count = cis.getByteCount();
+			result.size = count;
+			totalSize += count;
+			totalMatches += matches;
+		}
 
 		return matches;
 	}
@@ -357,6 +387,12 @@ public class SearchThread extends Thread {
 		}
 		
 		return found;
+	}
+
+	private void checkRunning() {
+		if (!running) {
+			throw new RuntimeException("stopped");
+		}
 	}
 
 }

@@ -4,9 +4,14 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.io.*;
 import java.math.*;
-import java.text.NumberFormat;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.text.*;
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.*;
 
+import javax.swing.BoxLayout;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -21,8 +26,9 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 
 public class LogSearchUtil {
-
-	public static final long MS_IN_DAY = 1000 * 60 * 60 * 24;
+	
+	public static final long MS_IN_DAY = 1000L * 60 * 60 * 24;
+	public static final long NS_IN_S = 1_000_000_000L;
 	
 	public static final String STARTDATE_PREF = "startdate";
 	public static final String ENDDATE_PREF = "enddate";
@@ -30,7 +36,6 @@ public class LogSearchUtil {
 	public static final String CONTEXT_BEFORE_PREF = "contextbefore";
 	public static final String CONTEXT_AFTER_PREF = "contextafter";
 	public static final String CASE_PREF = "case";
-	public static final String START_OR_AGE_PREF = "start";
 	public static final String EDITOR_PREF = "editor";
 	public static final String AGE_PREF = "age";
 	public static final String SEARCH_PREF = "search";
@@ -40,18 +45,32 @@ public class LogSearchUtil {
 	public static final String REGEX_PREF = "regex";
 	public static final String EXCLUDE_PREF = "exclude";
 	public static final String CD_PREF = "cd";
+	public static final String RANGE_PREF = "range";
+	public static final String CACHE_PREF = "cache";
+	public static final String MATCHES_PREF = "matches";
+	public static final String COUNT = "count";
+	public static final String AGE_HOURS_PREF = "agehours";
 	
-	private static final String OPEN = "/usr/bin/open";
-
-	private static Map<Object, File> TEMP_FILES = new TreeMap<>();
+	public static final String ALL_FILES_RANGE = "All Files";
+	public static final String DATE_RANGE = "Date Range";
+	public static final String MAX_AGE_RANGE = "Max Age";
+	public static final String MAX_FILES_RANGE = "Max Count";
 	
+	private static final String OSX_OPEN = "/usr/bin/open";
+	private static final Map<Object, File> TEMP_FILES = new TreeMap<>();
 	private static final String[] PREFIX = new String[] {
 			"B", "KB", "MB", "GB", "TB", "PB", "EB"
 	};
+	private static final Map<File,CachedFile> CACHED_FILES = new TreeMap<>();
+	private static final ScheduledExecutorService EX = Executors.newScheduledThreadPool(1);
 
+	public static void init() {
+		EX.schedule(() -> updateCache(), 1, TimeUnit.MINUTES);
+	}
+	
 	public static void execOpen (File editor, File file, int lineno) throws Exception {
 		String[] args;
-		if (editor.getPath().equals(OPEN)) {
+		if (editor.getPath().equals(OSX_OPEN)) {
 			args = new String[] { editor.getAbsolutePath(), "-t", file.getAbsolutePath() };
 		} else if (editor.getName().equals("notepad++.exe")) {
 			args = new String[] { editor.getAbsolutePath(), "-n" + lineno, file.getAbsolutePath() };
@@ -77,30 +96,42 @@ public class LogSearchUtil {
 	}
 	
 	/**
-	 * get uncompressed file for result (cached)
+	 * return uncompressed size of result (if it was compressed)
 	 */
-	public static File toTempFile (final Result result) throws Exception {
-		File file;
+	public static long getTempFileSize (final Result result) {
+		File tf = TEMP_FILES.get(result.key());
+		if (tf == null && (result.entry != null || isCompressed(result.file.getName()))) {
+			return result.size;
+		} else {
+			return 0;
+		}
+	}
+	
+	/**
+	 * get original file if not compressed, otherwise decompress to temp file
+	 */
+	public static File getOrCreateFile (final Result result) throws Exception {
+		File f;
 		if (result.entry != null) {
-			file = TEMP_FILES.get(result.key());
-			if (file == null) {
-				TEMP_FILES.put(result.key(), file = entryToFile(result, createTempFile(result)));
+			f = TEMP_FILES.get(result.key());
+			if (f == null) {
+				TEMP_FILES.put(result.key(), f = entryToFile(result, createTempFile(result)));
 			}
 		} else if (isCompressed(result.file.getName())) {
-			file = TEMP_FILES.get(result.key());
-			if (file == null) {
-				TEMP_FILES.put(result.key(), file = decompressToFile(result, createTempFile(result)));
+			f = TEMP_FILES.get(result.key());
+			if (f == null) {
+				TEMP_FILES.put(result.key(), f = decompressToFile(result, createTempFile(result)));
 			}
 		} else {
-			file = result.file;
+			f = result.file;
 		}
-		return file;
+		return f;
 	}
 
 	/**
 	 * get uncompressed file for result
 	 */
-	public static void toFile (final Result result, final File destFile) throws Exception {
+	public static void copyToFile (final Result result, final File destFile) throws Exception {
 		if (result.entry != null) {
 			entryToFile(result, destFile);
 		} else if (isCompressed(result.file.getName())) {
@@ -126,7 +157,7 @@ public class LogSearchUtil {
 	}
 
 	public static File createTempFile (Result result) throws Exception {
-		File file = File.createTempFile(result.tempName(), null);
+		File file = File.createTempFile(result.suggestedFileName(), null);
 		file.deleteOnExit();
 		return file;
 	}
@@ -138,18 +169,23 @@ public class LogSearchUtil {
 		return file;
 	}
 
+	/** default editor or null */
 	public static File defaultEditor () {
 		String os = System.getProperty("os.name").toLowerCase();
 		File f = null;
 
 		if (os.startsWith("mac os x")) {
-			f = new File(OPEN);
+			f = new File(OSX_OPEN);
 
 		} else if (os.startsWith("windows")) {
 			Map<String, String> env = System.getenv();
+			String pf = env.get("ProgramFiles");
 			String pf86 = env.get("ProgramFiles(x86)");
 			String windir = env.get("windir");
-			f = new File(pf86 + "\\Notepad++\\notepad++.exe");
+			f = new File(pf + "\\Notepad++\\notepad++.exe");
+			if (!f.exists()) {
+				f = new File(pf86 + "\\Notepad++\\notepad++.exe");
+			}
 			if (!f.exists()) {
 				f = new File(windir + "\\notepad.exe");
 			}
@@ -158,11 +194,7 @@ public class LogSearchUtil {
 			}
 		}
 
-		if (f != null && !f.exists()) {
-			f = null;
-		}
-
-		return f;
+		return f != null && f.exists() ? f : null;
 	}
 
 	public static void stringToDirs (Collection<File> dirs, String dirStr) {
@@ -198,23 +230,35 @@ public class LogSearchUtil {
 				q.setPreferredSize(new Dimension(5,5));
 				p.add(q);
 			}
-			if (c instanceof String) {
-				c = new JLabel((String)c);
-			}
-			if (c instanceof JComponent) {
-				p.add((JComponent)c);
-			} else {
-				throw new RuntimeException(String.valueOf(c));
-			}
+			p.add(comp(c));
 			rest = true;
 		}
 		return p;
 	}
+	
+	private static JComponent comp (Object o) {
+		if (o instanceof String) {
+			return new JLabel((String)o);
+		} else if (o instanceof JComponent) {
+			return (JComponent)o;
+		} else {
+			throw new RuntimeException(String.valueOf(o));
+		}
+	}
 
-	public static JPanel flowPanel (JComponent... comps) {
+	public static JPanel flowPanel (Object... comps) {
 		JPanel p = new JPanel();
-		for (JComponent c : comps) {
-			p.add(c);
+		for (Object c : comps) {
+			p.add(comp(c));
+		}
+		return p;
+	}
+	
+	public static JPanel boxPanel (Object... comps) {
+		JPanel p = new JPanel(null);
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		for (Object c : comps) {
+			p.add(comp(c));
 		}
 		return p;
 	}
@@ -227,6 +271,118 @@ public class LogSearchUtil {
 			return NumberFormat.getNumberInstance().format(s) + PREFIX[p];
 		} else {
 			return String.valueOf(l) + "B";
+		}
+	}
+	
+	/**
+	 * format duration string
+	 */
+	public static String formatTime (int t) {
+		Duration dur = Duration.ofSeconds(t);
+		long d = dur.toDays(), h = dur.toHours() % 24, m = dur.toMinutes() % 60, s = dur.getSeconds() % 60;
+		if (d > 0) {
+			return String.format("%dd %dh %dm %ds", d, h, m, s);
+		} else if (h > 0) {
+			return String.format("%dh %dm %ds", h, m, s);
+		} else if (m > 0) {
+			return String.format("%dm %ds", m, s);
+		} else {
+			return String.format("%ds", s);
+		}
+	}
+	
+	/**
+	 * sleep if system property configured
+	 */
+	public static void testSleep () {
+		String maxstr = System.getProperty("ls.sleep");
+		if (maxstr != null && maxstr.length() > 0) {
+			try {
+				Thread.sleep(Integer.parseInt(maxstr));
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}
+	}
+	
+	/**
+	 * get default charset items
+	 */
+	public static Vector<ComboItem> charsets () {
+		Vector<ComboItem> v = new Vector<>();
+		Charset dcs = Charset.defaultCharset();
+		v.add(new ComboItem(dcs, dcs.name()));
+		for (Charset cs : new Charset[] { StandardCharsets.US_ASCII, StandardCharsets.ISO_8859_1, StandardCharsets.UTF_8, StandardCharsets.UTF_16,
+				StandardCharsets.UTF_16BE, StandardCharsets.UTF_16LE }) {
+			if (!cs.name().equals(dcs.name())) {
+				v.add(new ComboItem(cs, cs.name()));
+			}
+		}
+		Collections.sort(v);
+		return v;
+	}
+	
+	/**
+	 * get sum of cached data arrays
+	 */
+	private static long cacheSum() {
+		synchronized (CACHED_FILES) {
+			long v = 0;
+			for (CachedFile f : CACHED_FILES.values()) {
+				if (f.data != null) {
+					v += f.data.length;
+				}
+			}
+			return v;
+		}
+	}
+	
+	/**
+	 * return true if cache size less than max
+	 */
+	public static boolean cacheSumOk () {
+		String maxstr = System.getProperty("ls.maxcache");
+		long max;
+		if (maxstr != null && maxstr.length() > 0) {
+			max = Long.parseLong(maxstr);
+		} else {
+			max = 1_000_0000_0000L;
+		}
+		return cacheSum() < max;
+	}
+	
+	public static CachedFile getCachedFile (File f) {
+		synchronized (CACHED_FILES) {
+			CachedFile cf = CACHED_FILES.get(f);
+			if (cf != null) {
+				cf.accessedNs = System.nanoTime();
+			}
+			return cf;
+		}
+	}
+	
+	public static CachedFile putCachedFile (File f, CachedFile cf) {
+		synchronized (CACHED_FILES) {
+			cf.accessedNs = System.nanoTime();
+			CACHED_FILES.put(f, cf);
+			return cf;
+		}
+	}
+	
+	private static void updateCache () {
+		long t = System.nanoTime() - NS_IN_S * 60 * 60;
+		synchronized (CACHED_FILES) {
+			Iterator<CachedFile> i = CACHED_FILES.values().iterator();
+			while (i.hasNext()) {
+				CachedFile cf = i.next();
+				if (cf.accessedNs < t) {
+					i.remove();
+				}
+			}
+			int size = CACHED_FILES.size();
+			if (size > 0) {
+				System.out.println("cache size: " + size + " sum: " + cacheSum());
+			}
 		}
 	}
 	
