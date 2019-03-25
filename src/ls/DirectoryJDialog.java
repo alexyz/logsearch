@@ -21,9 +21,9 @@ public class DirectoryJDialog extends JDialog {
 		System.exit(0);
 	}
 	
-	private final JButton addButton = new JButton("Add");
-	private final JButton editButton = new JButton("Edit");
-	private final JButton removeButton = new JButton("Remove");
+	private final JButton addButton = new JButton("Add...");
+	private final JButton editButton = new JButton("Edit...");
+	private final JButton removeButton = new JButton("Remove...");
 	private final JButton okButton = new JButton("OK");
 	private final JButton cancelButton = new JButton("Cancel");
 	private final JTable dirTable = new JTable(new DirectoryTableModel());
@@ -111,7 +111,13 @@ public class DirectoryJDialog extends JDialog {
 	private void removeDir () {
 		int i = dirTable.getSelectedRow();
 		if (i >= 0) {
-			((DirectoryTableModel) dirTable.getModel()).remove(i);
+			DirectoryTableModel m = (DirectoryTableModel) dirTable.getModel();
+			if (JOptionPane.showConfirmDialog(this, 
+					"Remove " + m.getDir(i).getName() + "?",
+					"Remove",
+					JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+				m.remove(i);
+			}
 		}
 	}
 

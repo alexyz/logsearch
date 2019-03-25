@@ -27,10 +27,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		} catch (Exception e) {
 			e.printStackTrace(System.out);
 		}
+		FileCache.init();
 		LogSearchJFrame instance = new LogSearchJFrame();
 		instance.setLocationRelativeTo(null);
 		instance.setVisible(true);
-		FileCache.init();
 	}
 	
 	private final JLabel dirLabel = new JLabel();
@@ -380,8 +380,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			String range = (String) rangeComboBox.getSelectedItem();
 			if (range == DATE_RANGE) {
 				startDate = (Date) startDateSpinner.getValue();
-				Date endDateInclusive = (Date) endDateSpinner.getValue();
-				endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
+				//Date endDateInclusive = (Date) endDateSpinner.getValue();
+				//endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
+				endDate = (Date) endDateSpinner.getValue();
 			} else if (range == AGE_RANGE) {
 				Calendar cal = new GregorianCalendar();
 				cal.add(Calendar.DATE, -((Number)ageDaysSpinner.getValue()).intValue());
@@ -428,7 +429,12 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		menuBar.add(fileMenu);
 		setJMenuBar(menuBar);
 		
+		//
+		
 		charsetComboBox.setModel(new DefaultComboBoxModel<>(LogSearchUtil.charsets()));
+		charsetComboBox.setToolTipText("Character set to intepret files as");
+		
+		//
 		
 		Vector<String> ranges = new Vector<>(Arrays.asList(ALL_RANGE, COUNT_RANGE, DATE_RANGE, AGE_RANGE));
 		Collections.sort(ranges);
@@ -447,17 +453,36 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			startDateSpinner.setPreferredSize(new Dimension(len * width, height));
 			startDateSpinner.setModel(new SpinnerDateModel(minDate, minDate, maxDate, Calendar.DATE));
 			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, pattern));
+			startDateSpinner.setToolTipText("Earliest file date and time (inclusive)");
+			
 			endDateSpinner.setPreferredSize(new Dimension(len * width, height));
 			endDateSpinner.setModel(new SpinnerDateModel(maxDate, minDate, maxDate, Calendar.DATE));
 			endDateSpinner.setEditor(new JSpinner.DateEditor(endDateSpinner, pattern));
+			endDateSpinner.setToolTipText("Latest file date and time (exclusive)");
 		}
 		
 		ageDaysSpinner.setPreferredSize(new Dimension(5 * width, height));
+		ageDaysSpinner.setToolTipText("Maximum file age (days component)");
 		ageHoursSpinner.setPreferredSize(new Dimension(4 * width, height));
+		ageHoursSpinner.setToolTipText("Maximum file age (hours component)");
 		countSpinner.setPreferredSize(new Dimension(5 * width, height));
+		countSpinner.setToolTipText("Maximum number of files to scan");
+		
+		//
+		
+		regexCheckBox.setToolTipText("Interpret Line Contains and Doesn't Contain as Java regular expression");
+		
+		//
+		
 		contextBeforeSpinner.setPreferredSize(new Dimension(4 * width, height));
+		contextBeforeSpinner.setToolTipText("Number of lines before match to include in preview");
 		contextAfterSpinner.setPreferredSize(new Dimension(4 * width, height));
+		contextAfterSpinner.setToolTipText("Number of lines after match to include in preview");
 		matchesSpinner.setPreferredSize(new Dimension(5 * width, height));
+		matchesSpinner.setToolTipText("Maximum number of matches per file (0 = unlimited)");
+		cacheCheckBox.setToolTipText("Cache uncompressed files in memory");
+		
+		//
 		
 		JPanel northPanel = boxPanel(
 				flowPanel(dirLabel, dirButton, "Filename Contains", nameTextField, "Charset", charsetComboBox),
