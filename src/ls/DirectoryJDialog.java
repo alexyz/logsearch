@@ -4,8 +4,6 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Frame;
 import java.awt.GridLayout;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.File;
 import java.util.*;
 
@@ -23,9 +21,9 @@ public class DirectoryJDialog extends JDialog {
 		System.exit(0);
 	}
 	
-	private final JButton addButton = new JButton("Add");
-	private final JButton editButton = new JButton("Edit");
-	private final JButton removeButton = new JButton("Remove");
+	private final JButton addButton = new JButton("Add...");
+	private final JButton editButton = new JButton("Edit...");
+	private final JButton removeButton = new JButton("Remove...");
 	private final JButton okButton = new JButton("OK");
 	private final JButton cancelButton = new JButton("Cancel");
 	private final JTable dirTable = new JTable(new DirectoryTableModel());
@@ -49,61 +47,11 @@ public class DirectoryJDialog extends JDialog {
 	}
 	
 	private JPanel init () {
-		addButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed (ActionEvent e) {
-				JFileChooser fc = new JFileChooser(new File(System.getProperty("user.dir")));
-				fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-				int opt = fc.showOpenDialog(DirectoryJDialog.this);
-				if (opt == JFileChooser.APPROVE_OPTION) {
-					final DirectoryTableModel m = (DirectoryTableModel) dirTable.getModel();
-					m.add(fc.getSelectedFile().getAbsoluteFile(), true);
-					dirTable.getSelectionModel().setSelectionInterval(m.getRowCount(), m.getRowCount());
-				}
-			}
-		});
-		
-		editButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed (ActionEvent e) {
-				int i = dirTable.getSelectedRow();
-				if (i >= 0) {
-					JFileChooser fc = new JFileChooser(((DirectoryTableModel) dirTable.getModel()).getDir(i));
-					fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-					int opt = fc.showOpenDialog(DirectoryJDialog.this);
-					if (opt == JFileChooser.APPROVE_OPTION) {
-						((DirectoryTableModel) dirTable.getModel()).update(i, fc.getSelectedFile().getAbsoluteFile());
-						repaint();
-					}
-				}
-			}
-		});
-		
-		removeButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed (ActionEvent e) {
-				int i = dirTable.getSelectedRow();
-				if (i >= 0) {
-					((DirectoryTableModel) dirTable.getModel()).remove(i);
-				}
-			}
-		});
-		
-		okButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed (ActionEvent e) {
-				ok = true;
-				setVisible(false);
-			}
-		});
-		
-		cancelButton.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed (ActionEvent e) {
-				setVisible(false);
-			}
-		});
-		
+		addButton.addActionListener(e -> addDir());
+		editButton.addActionListener(e -> editDir());
+		removeButton.addActionListener(e -> removeDir());
+		okButton.addActionListener(e -> close(true));
+		cancelButton.addActionListener(e -> close(false));
 		dirTable.getColumnModel().getColumn(0).setMaxWidth(100);
 		
 		JScrollPane scoller = new JScrollPane(dirTable);
@@ -128,6 +76,17 @@ public class DirectoryJDialog extends JDialog {
 		return s;
 	}
 	
+	private void addDir () {
+		JFileChooser fc = new JFileChooser(new File(System.getProperty("user.dir")));
+		fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+		int opt = fc.showOpenDialog(DirectoryJDialog.this);
+		if (opt == JFileChooser.APPROVE_OPTION) {
+			final DirectoryTableModel m = (DirectoryTableModel) dirTable.getModel();
+			m.add(fc.getSelectedFile().getAbsoluteFile(), true);
+			dirTable.getSelectionModel().setSelectionInterval(m.getRowCount(), m.getRowCount());
+		}
+	}
+	
 	public boolean isOk () {
 		return ok;
 	}
@@ -135,4 +94,36 @@ public class DirectoryJDialog extends JDialog {
 	public Set<File> getDirs (boolean enabled) {
 		return ((DirectoryTableModel) dirTable.getModel()).getDirs(enabled);
 	}
+
+	private void editDir () {
+		int i = dirTable.getSelectedRow();
+		if (i >= 0) {
+			JFileChooser fc = new JFileChooser(((DirectoryTableModel) dirTable.getModel()).getDir(i));
+			fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			int opt = fc.showOpenDialog(DirectoryJDialog.this);
+			if (opt == JFileChooser.APPROVE_OPTION) {
+				((DirectoryTableModel) dirTable.getModel()).update(i, fc.getSelectedFile().getAbsoluteFile());
+				repaint();
+			}
+		}
+	}
+
+	private void removeDir () {
+		int i = dirTable.getSelectedRow();
+		if (i >= 0) {
+			DirectoryTableModel m = (DirectoryTableModel) dirTable.getModel();
+			if (JOptionPane.showConfirmDialog(this, 
+					"Remove " + m.getDir(i).getName() + "?",
+					"Remove",
+					JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+				m.remove(i);
+			}
+		}
+	}
+
+	private void close (boolean ok) {
+		this.ok = ok;
+		setVisible(false);
+	}
+	
 }

@@ -3,27 +3,34 @@ package ls;
 import java.io.File;
 import java.util.*;
 
+import org.apache.commons.lang3.builder.CompareToBuilder;
+
 /**
  * results of a search in a particular file
  */
 public class Result implements Comparable<Result> {
 	/** map of line number to line */
 	public final NavigableMap<Integer, String> lines = new TreeMap<>();
-	/** name of the log file */
+	/** name of the log file - file name or zip archive entry name */
 	public final String name;
-	public final Date date;
+	public final FileDate fileDate;
 	public final File file;
 	/** zip file entry name */
 	public final String entry;
+	/** size on disk */
+	public final long pSize;
 	
 	// updated during search
-	/** match description (null for no match, or number of lines, or error etc) */
-	public Object matches;
-
-	public Result(File file, Date date, String entry) {
+	/** number of lines matches */
+	public int matches;
+	/** message if no matches */
+	public String error;
+	
+	public Result(File file, FileDate date, String entry, long pSize) {
 		this.file = file;
-		this.date = date;
+		this.fileDate = date;
 		this.entry = entry;
+		this.pSize = pSize;
 		if (entry != null) {
 			int i = entry.lastIndexOf("/");
 			if (i >= 0 && i < entry.length()) {
@@ -34,7 +41,7 @@ public class Result implements Comparable<Result> {
 			this.name = file.getName();
 		}
 	}
-
+	
 	/** human readable name of file plus name of zip file if any */
 	public String name () {
 		if (entry != null) {
@@ -43,7 +50,7 @@ public class Result implements Comparable<Result> {
 			return name;
 		}
 	}
-
+	
 	/** key representing result */
 	public Object key () {
 		if (entry != null) {
@@ -52,28 +59,27 @@ public class Result implements Comparable<Result> {
 			return file.getAbsolutePath();
 		}
 	}
-
+	
 	/** name of temp file */
-	public String tempName () {
+	public String suggestedFileName () {
 		if (entry != null) {
 			return file.getName() + "." + name;
 		} else {
 			return name;
 		}
 	}
-
+	
 	@Override
 	public int compareTo (Result o) {
-		int c = date.compareTo(o.date);
-		if (c == 0) {
-			c = name.compareToIgnoreCase(o.name);
-		}
-		return -c;
+		CompareToBuilder cb = new CompareToBuilder();
+		cb.append(o.fileDate.date, fileDate.date);
+		cb.append(name.toLowerCase(), o.name.toLowerCase());
+		return cb.toComparison();
 	}
-
+	
 	@Override
 	public String toString () {
-		return "Result [lines=" + lines.size() + ", name=" + name + ", date=" + date + ", file=" + file + ", entry=" + entry + ", matches=" + matches + "]";
+		return "Result [lines=" + lines.size() + " name=" + name + " date=" + fileDate + " file=" + file + " entry=" + entry + " matches=" + matches + "]";
 	}
-
+	
 }

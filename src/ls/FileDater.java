@@ -24,8 +24,12 @@ public class FileDater {
 		}
 	}
 	
-	public Date getFileDate (long fileTime, String fileName) {
+	/** never returns null */
+	public FileDate getFileDate (long fileTime, String fileName) {
+		String source = null;
 		Date date = null;
+		
+		// this could be extended to look at first line of file
 		
 		if (datePattern != null) {
 			if (fileName.length() > 0) {
@@ -36,13 +40,15 @@ public class FileDater {
 					
 					try {
 						if (mat.group(1) != null) {
+							source = "filename hour pattern";
 							date = dateFormatHour.parse(dateStr);
 						} else {
+							source = "filename day pattern";
 							date = dateFormat.parse(dateStr);
 						}
 						
 					} catch (Exception e) {
-						e.printStackTrace();
+						System.out.println("could not parse date " + dateStr + ": " + e);
 					}
 					
 				} else {
@@ -52,9 +58,10 @@ public class FileDater {
 		}
 		
 		if (date == null && fileTime > 0) {
+			source = "file modified time";
 			date = new Date(fileTime);
 		}
 		
-		return date;
+		return new FileDate(source, date);
 	}
 }

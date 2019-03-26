@@ -5,6 +5,7 @@ import java.util.Random;
 import java.util.zip.GZIPOutputStream;
 
 import org.apache.commons.compress.archivers.zip.*;
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
 
 /**
  * generate test data (plain text, gz and zip)
@@ -16,18 +17,22 @@ public class TestData {
 	public static void main (String[] args) throws Exception {
 		System.out.println("press enter for test data");
 		while (System.in.read() != '\n');
-		new File("logs").mkdirs();
-		try (PrintWriter pw = new PrintWriter(new FileWriter("logs/server.log"))) {
+		File logDir = new File(args[0]);
+		logDir.mkdirs();
+		try (PrintWriter pw = new PrintWriter(new FileWriter(new File(logDir, "server.log")))) {
 			write(pw);
 		}
-		try (ZipArchiveOutputStream zos = new ZipArchiveOutputStream(new File("logs/example.zip"))) {
+		try (ZipArchiveOutputStream zos = new ZipArchiveOutputStream(new File(logDir, "example.zip"))) {
 			ZipArchiveEntry ze = new ZipArchiveEntry("server.log.2");
 		    zos.putArchiveEntry(ze);
 		    PrintWriter pw = new PrintWriter(new OutputStreamWriter(zos));
 		    write(pw);
 		    zos.closeArchiveEntry();
 		}
-		try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(new File("logs/server.log.3.gz")))))) {
+		try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(new File(logDir, "server.log.3.gz")))))) {
+			write(pw);
+		}
+		try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new BZip2CompressorOutputStream(new FileOutputStream(new File(logDir, "server.log.4.bz2")))))) {
 			write(pw);
 		}
 	}

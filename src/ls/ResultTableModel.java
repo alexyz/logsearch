@@ -29,7 +29,7 @@ public class ResultTableModel extends AbstractTableModel {
 	public void add (Result fd) {
 		results.add(fd);
 		Collections.sort(results);
-		if (fd.lines.size() > 0 || fd.matches != null) {
+		if (fd.lines.size() > 0 || fd.matches > 0 || fd.error != null) {
 			matchingResults.add(fd);
 			Collections.sort(matchingResults);
 		}
@@ -78,6 +78,8 @@ public class ResultTableModel extends AbstractTableModel {
 	public String getToolTipAt (int row, int col) {
 		Result r = getCurrentResults().get(row);
 		switch (col) {
+			case 0:
+				return r.fileDate != null ? r.fileDate.source : null;
 			case 1:
 				return r.file.getAbsolutePath() + (r.entry != null ? ": " + r.entry : "");
 			default:
@@ -90,13 +92,13 @@ public class ResultTableModel extends AbstractTableModel {
 		Result r = getCurrentResults().get(row);
 		switch (col) {
 			case 0:
-				return DateFormat.getDateTimeInstance().format(r.date);
+				return r.fileDate.date != null ? DateFormat.getDateTimeInstance().format(r.fileDate.date) : null;
 			case 1:
 				return r.name();
 			case 2:
-				return LogSearchUtil.formatSize(r.file.length()); // might be compressed length
+				return LogSearchUtil.formatSize(r.pSize);
 			case 3:
-				return r.matches != null ? r.matches : "";
+				return r.matches > 0 ? String.valueOf(r.matches) : r.error;
 			default:
 				return null;
 		}
