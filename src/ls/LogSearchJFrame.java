@@ -38,10 +38,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JTextField nameTextField = new JTextField(10);
 	private final JTextField containsTextField = new JTextField(20);
 	private final JTextField doesNotContainTextField = new JTextField(15);
-	//private final JSpinner startDateSpinner = new JSpinner();
-	//private final JSpinner endDateSpinner = new JSpinner();
-	private final DateTextFieldJPanel startDatePanel = new DateTextFieldJPanel();
-	private final DateTextFieldJPanel endDatePanel = new DateTextFieldJPanel();
+	private final DateTextFieldJPanel startDatePanel = new DateTextFieldJPanel("Start Date");
+	private final DateTextFieldJPanel endDatePanel = new DateTextFieldJPanel("End Date");
 	private final JSpinner ageDaysSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
 	private final JSpinner ageHoursSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 23, 1));
 	private final JButton startButton = new JButton("Start");
@@ -73,7 +71,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JLabel ageDaysLabel = new JLabel("Days");
 	private final JLabel ageHoursLabel = new JLabel("Hours");
 	private final JLabel countLabel = new JLabel("Count");
-
 	
 	private volatile SearchThread thread;
 	
@@ -119,8 +116,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		Date endDate = midnightCal.getTime();
 		midnightCal.add(Calendar.DATE, -7);
 		Date startDate = midnightCal.getTime();
-
-		// FIXME ability to load null
 		startDatePanel.setDate(new Date(prefs.getLong(STARTDATE_PREF, startDate.getTime())));
 		endDatePanel.setDate(new Date(prefs.getLong(ENDDATE_PREF, endDate.getTime())));
 		
@@ -131,12 +126,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		countSpinner.setValue(Integer.valueOf(prefs.getInt(COUNT_PREF, 100)));
 	}
 
-
-
-	private long getMillis(Date d) {
-		return d != null ? d.getTime() : null;
-	}
-	
 	private void savePrefs () {
 		System.out.println("save prefs");
 		prefs.put(DIR_PREF, dirsToString(dirs));
@@ -391,8 +380,6 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			String range = (String) rangeComboBox.getSelectedItem();
 			if (range == DATE_RANGE) {
 				startDate = startDatePanel.getDate();
-				//Date endDateInclusive = (Date) endDateSpinner.getValue();
-				//endDate = new Date(endDateInclusive.getTime() + MS_IN_DAY);
 				endDate = endDatePanel.getDate();
 			} else if (range == AGE_RANGE) {
 				Calendar cal = new GregorianCalendar();
@@ -452,27 +439,9 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		rangeComboBox.setModel(new DefaultComboBoxModel<>(ranges));
 		
 		int width = 12, height = 20;
-		
-		{
-			Date maxDate = new GregorianCalendar(2099, 11, 31).getTime();
-			Date minDate = new GregorianCalendar(1970, 0, 1).getTime();
-			DateFormat df = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT);
-			SimpleDateFormat sdf = df instanceof SimpleDateFormat ? (SimpleDateFormat)df : null;
-			String pattern = sdf != null ? sdf.toPattern() : "yyyy-MM-dd HH:mm";
-			int len = (int) (df.format(new Date()).length() * 0.75);
 
-			// FIXME
-//			startDateSpinner.setPreferredSize(new Dimension(len * width, height));
-//			startDateSpinner.setModel(new SpinnerDateModel(minDate, minDate, maxDate, Calendar.DATE));
-//			startDateSpinner.setEditor(new JSpinner.DateEditor(startDateSpinner, pattern));
-//			startDateSpinner.setToolTipText("Earliest file date and time (inclusive)");
-//
-//			endDateSpinner.setPreferredSize(new Dimension(len * width, height));
-//			endDateSpinner.setModel(new SpinnerDateModel(maxDate, minDate, maxDate, Calendar.DATE));
-//			endDateSpinner.setEditor(new JSpinner.DateEditor(endDateSpinner, pattern));
-//			endDateSpinner.setToolTipText("Latest file date and time (exclusive)");
-		}
-		
+		startDatePanel.setToolTipText("Earliest file date and time (inclusive)");
+		endDatePanel.setToolTipText("Latest file date and time (exclusive)");
 		ageDaysSpinner.setPreferredSize(new Dimension(5 * width, height));
 		ageDaysSpinner.setToolTipText("Maximum file age (days component)");
 		ageHoursSpinner.setPreferredSize(new Dimension(4 * width, height));
@@ -534,7 +503,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		
 		boolean date = range.equals(DATE_RANGE);
 		startDateLabel.setEnabled(date);
-		startDatePanel.setEnabled(date); // FIXME
+		startDatePanel.setEnabled(date);
 		endDateLabel.setEnabled(date);
 		endDatePanel.setEnabled(date);
 		

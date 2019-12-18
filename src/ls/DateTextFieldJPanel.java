@@ -13,8 +13,10 @@ public class DateTextFieldJPanel extends JPanel {
     private final DateFormat dateFormat = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT);
     private final JTextField dateField = new JTextField();
     private final JButton editButton = new JButton("...");
+    private String title;
 
-    public DateTextFieldJPanel() {
+    public DateTextFieldJPanel(String title) {
+        this.title = title;
         float f = dateFormat.format(new Date()).length() * 0.66f;
         dateField.setColumns((int)f);
         editButton.addActionListener(e -> openDialog());
@@ -24,23 +26,29 @@ public class DateTextFieldJPanel extends JPanel {
         add(editButton);
     }
 
+    @Override
+    public void setEnabled(boolean b) {
+        super.setEnabled(b);
+        dateField.setEnabled(b);
+        editButton.setEnabled(b);
+    }
+
     private void openDialog() {
         DateJDialog d = new DateJDialog();
         d.setLocationRelativeTo(this);
+        d.setTitle(title);
         long v = getTime();
-        if (v >= 0) {
-            d.getDatePanel().setTime(new Date(v));
-        }
+        d.getDatePanel().setDate(v != -1 ? new Date(v) : null);
         d.setModalityType(Dialog.ModalityType.DOCUMENT_MODAL);
         d.setVisible(true);
         if (d.isOk()) {
-            System.out.println("dtfp set date " + d.getDatePanel().getTime());
-            setDate(d.getDatePanel().getTime());
+            System.out.println("dtfp set date " + d.getDatePanel().getDate());
+            setDate(d.getDatePanel().getDate());
         }
     }
 
     public void setDate(Date v) {
-        if (v != null) {
+        if (v != null && v.getTime() != -1) {
             dateField.setText(dateFormat.format(v));
         } else {
             dateField.setText("");
@@ -48,13 +56,15 @@ public class DateTextFieldJPanel extends JPanel {
     }
 
     public Date getDate() throws ParseException {
-        if (dateField.getText().length() > 0) {
-            return dateFormat.parse(dateField.getText());
+        String text = dateField.getText().trim();
+        if (text.length() > 0) {
+            return dateFormat.parse(text);
         } else {
             return null;
         }
     }
 
+    /** get time in milliseconds, -1 if blank */
     public long getTime() {
         try {
             Date d = getDate();

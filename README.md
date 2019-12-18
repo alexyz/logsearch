@@ -17,4 +17,4 @@ Screenshots
 Download
 --------
 
-[Runnable jar file (including dependencies)](https://www.dropbox.com/s/otjrcgt9kvb83kp/logsearchexe.jar?dl=0)
+See github releases!

@@ -8,7 +8,7 @@ import java.util.GregorianCalendar;
 public class DateJDialog extends JDialog {
 
     private final DateSpinnerJPanel datePanel = new DateSpinnerJPanel();
-    private final JButton midnightButton = new JButton("Midnight");
+    private final JButton nowButton = new JButton("Today");
     private final JButton okButton = new JButton("OK");
     private final JButton cancelButton = new JButton("Cancel");
     private boolean ok;
@@ -16,10 +16,10 @@ public class DateJDialog extends JDialog {
     public DateJDialog() {
         okButton.addActionListener(e -> close(true));
         cancelButton.addActionListener(e -> close(false));
-        midnightButton.addActionListener(e -> midnight());
+        nowButton.addActionListener(e -> now());
 
         JPanel p = new JPanel();
-        p.add(midnightButton);
+        p.add(nowButton);
         p.add(okButton);
         p.add(cancelButton);
 
@@ -29,10 +29,10 @@ public class DateJDialog extends JDialog {
         pack();
     }
 
-    private void midnight() {
+    private void now() {
         Calendar c = new GregorianCalendar();
         Calendar c2 = new GregorianCalendar(c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
-        datePanel.setTime(c2.getTime());
+        datePanel.setDate(c2.getTime());
     }
 
     public DateSpinnerJPanel getDatePanel() {
