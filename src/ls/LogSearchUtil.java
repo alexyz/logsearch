@@ -45,6 +45,8 @@ public class LogSearchUtil {
 	public static final String NAME_PREF = "name";
 	public static final String DIR_PREF = "dir";
 	public static final String DIS_DIR_PREF = "disdir";
+	public static final String NR_DIR_PREF = "nrdir";
+	public static final String NR_DIS_DIR_PREF = "nrdisdir";
 	public static final String REGEX_PREF = "regex";
 	public static final String EXCLUDE_PREF = "exclude";
 	public static final String CD_PREF = "cd";
@@ -180,27 +182,6 @@ public class LogSearchUtil {
 		}
 
 		return f != null && f.exists() ? f : null;
-	}
-
-	public static void stringToDirs (Collection<File> dirs, String dirStr) {
-		StringTokenizer t = new StringTokenizer(dirStr, File.pathSeparator);
-		while (t.hasMoreTokens()) {
-			File d = new File(t.nextToken());
-			if (d.isDirectory()) {
-				dirs.add(d);
-			}
-		}
-	}
-
-	public static String dirsToString (Collection<File> dirs) {
-		StringBuilder dirSb = new StringBuilder();
-		for (File dir : dirs) {
-			if (dirSb.length() > 0) {
-				dirSb.append(File.pathSeparator);
-			}
-			dirSb.append(dir.getAbsolutePath());
-		}
-		return dirSb.toString();
 	}
 
 	public static JPanel inlineFlowPanel (Object... comps) {

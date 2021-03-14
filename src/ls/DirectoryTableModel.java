@@ -1,46 +1,42 @@
 package ls;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 import javax.swing.table.AbstractTableModel;
 
 public class DirectoryTableModel extends AbstractTableModel {
 	
-	private final List<File> dirs = new ArrayList<>();
-	private final List<Boolean> enabled = new ArrayList<>();
+	private final List<DirOpt> dirs = new ArrayList<>();
 	
-	public Set<File> getDirs (boolean enabled) {
-		Set<File> dirs = new TreeSet<>();
-		for (int n = 0; n < this.dirs.size(); n++) {
-			if (this.enabled.get(n).booleanValue() == enabled) {
-				dirs.add(this.dirs.get(n));
-			}
-		}
-		return dirs;
+	public List<DirOpt> getDirs () {
+		return new ArrayList<>(dirs);
 	}
 	
-	public void add (File dir, boolean en) {
+	public void add (DirOpt dir) {
 		dirs.add(dir);
-		enabled.add(en);
+		Collections.sort(dirs);
+		fireTableDataChanged();
+	}
+	
+	public void addAll (List<DirOpt> dirs) {
+		this.dirs.addAll(dirs);
+		Collections.sort(this.dirs);
 		fireTableDataChanged();
 	}
 	
 	public void remove (int row) {
 		dirs.remove(row);
-		enabled.remove(row);
 		fireTableDataChanged();
 	}
 	
-	public void update (int row, File dir) {
+	public void setDir (int row, DirOpt dir) {
 		dirs.set(row, dir);
+		Collections.sort(dirs);
 		fireTableDataChanged();
 	}
 	
-	public File getDir (int row) {
+	public DirOpt getDir (int row) {
 		return dirs.get(row);
 	}
 	
@@ -51,7 +47,7 @@ public class DirectoryTableModel extends AbstractTableModel {
 	
 	@Override
 	public int getColumnCount () {
-		return 2;
+		return 3;
 	}
 	
 	@Override
@@ -61,6 +57,8 @@ public class DirectoryTableModel extends AbstractTableModel {
 				return "Enabled";
 			case 1:
 				return "Dir";
+			case 2:
+				return "Recursive";
 			default:
 				throw new RuntimeException();
 		}
@@ -70,6 +68,7 @@ public class DirectoryTableModel extends AbstractTableModel {
 	public Class<?> getColumnClass (int columnIndex) {
 		switch (columnIndex) {
 			case 0:
+			case 2:
 				return Boolean.class;
 			case 1:
 				return String.class;
@@ -82,6 +81,7 @@ public class DirectoryTableModel extends AbstractTableModel {
 	public boolean isCellEditable (int rowIndex, int columnIndex) {
 		switch (columnIndex) {
 			case 0:
+			case 2:
 				return true;
 			case 1:
 				return false;
@@ -91,26 +91,33 @@ public class DirectoryTableModel extends AbstractTableModel {
 	}
 	
 	@Override
-	public Object getValueAt (int rowIndex, int columnIndex) {
-		switch (columnIndex) {
+	public Object getValueAt (int row, int col) {
+		DirOpt d = dirs.get(row);
+		switch (col) {
 			case 0:
-				return enabled.get(rowIndex);
+				return d.enabled;
 			case 1:
-				return dirs.get(rowIndex);
+				return d.dir;
+			case 2:
+				return d.recursive;
 			default:
 				throw new RuntimeException();
 		}
 	}
 	
 	@Override
-	public void setValueAt (Object aValue, int rowIndex, int columnIndex) {
-		switch (columnIndex) {
+	public void setValueAt (Object val, int row, int col) {
+		DirOpt d = dirs.get(row);
+		switch (col) {
 			case 0:
-				enabled.set(rowIndex, (Boolean) aValue);
+				d = new DirOpt(d.dir, (Boolean) val, d.recursive);
+			case 2:
+				d = new DirOpt(d.dir, d.enabled, (Boolean) val);
 				break;
 			default:
 				throw new RuntimeException();
 		}
+		dirs.set(row, d);
 	}
 	
 }

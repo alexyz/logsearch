@@ -8,11 +8,10 @@ import java.awt.GridLayout;
 import java.awt.event.*;
 import java.io.*;
 import java.nio.charset.Charset;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileFilter;
@@ -54,8 +53,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private final JButton previewAllButton = new JButton("Preview All");
 	private final JCheckBox showUnmatchedCheckBox = new JCheckBox("Show Unmatched");
 	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
-	private final Set<File> dirs = new TreeSet<>();
-	private final Set<File> disabledDirs = new TreeSet<>();
+	private final List<DirOpt> dirs = new ArrayList<>();
 	private final JCheckBox ignoreCaseCheckBox = new JCheckBox("Ignore Case");
 	private final JSpinner contextBeforeSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
 	private final JSpinner contextAfterSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
@@ -91,8 +89,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	private void loadPrefs () {
 		System.out.println("load prefs");
 		String userdir = System.getProperty("user.dir");
-		stringToDirs(dirs, prefs.get(DIR_PREF, userdir));
-		stringToDirs(disabledDirs, prefs.get(DIS_DIR_PREF, ""));
+		dirs.addAll(DirOpt.stringToDirs(prefs.get(DIR_PREF, userdir), true, true));
+		dirs.addAll(DirOpt.stringToDirs(prefs.get(DIS_DIR_PREF, ""), false, true));
+		dirs.addAll(DirOpt.stringToDirs(prefs.get(NR_DIR_PREF, ""), true, false));
+		dirs.addAll(DirOpt.stringToDirs(prefs.get(NR_DIS_DIR_PREF, ""), false, false));
 		updateDirsLabel();
 		nameTextField.setText(prefs.get(NAME_PREF, "server.log"));
 		containsTextField.setText(prefs.get(SEARCH_PREF, ""));
@@ -128,8 +128,10 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 
 	private void savePrefs () {
 		System.out.println("save prefs");
-		prefs.put(DIR_PREF, dirsToString(dirs));
-		prefs.put(DIS_DIR_PREF, dirsToString(disabledDirs));
+		prefs.put(DIR_PREF, DirOpt.dirsToString(dirs,true,true));
+		prefs.put(DIS_DIR_PREF, DirOpt.dirsToString(dirs,false,true));
+		prefs.put(NR_DIR_PREF, DirOpt.dirsToString(dirs,true,false));
+		prefs.put(NR_DIS_DIR_PREF, DirOpt.dirsToString(dirs,false,false));
 		prefs.put(NAME_PREF, nameTextField.getText());
 		prefs.put(SEARCH_PREF, containsTextField.getText());
 		prefs.put(EXCLUDE_PREF, doesNotContainTextField.getText());
@@ -334,41 +336,37 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 		try {
 			System.out.println("search");
 			
-			if (dirs.size() == 0) {
-				throw new Exception("No directories chosen");
+			List<DirOpt> dirs2 = dirs.stream().filter(d -> d.dir.isDirectory() && d.enabled).collect(Collectors.toList());
+			
+			if (dirs2.size() == 0) {
+				throw new Exception("No directories selected (or exist)");
 			}
 			
 			tableModel.clear();
 			
 			// sort with highest dirs first
-			List<File> sortedDirs = new ArrayList<>(dirs);
-			Collections.sort(sortedDirs, new Comparator<File>() {
-				@Override
-				public int compare (final File o1, final File o2) {
-					return o1.getAbsolutePath().length() - o2.getAbsolutePath().length();
-				}
-			});
+			Collections.sort(dirs2, DirOpt.LEN_CMP);
 			
-			TreeSet<File> searchDirs = new TreeSet<>();
+			List<DirOpt> dirs3 = new ArrayList<>();
 			
-			for (File dir : sortedDirs) {
-				String dirStr = dir.getAbsolutePath() + File.separator;
+			for (DirOpt d2 : dirs2) {
+				String d2str = d2.dir.getAbsolutePath() + File.separator;
 				boolean add = true;
-				for (File searchDir : searchDirs) {
-					String searchDirStr = searchDir.getAbsolutePath() + File.separator;
+				for (DirOpt d3 : dirs3) {
+					String d3str = d3.dir.getAbsolutePath() + File.separator;
 					// is this directory already included
-					if (dirStr.startsWith(searchDirStr)) {
-						System.out.println("exclude dir " + dir + " due to below " + searchDir);
+					if (d3.recursive && d2str.startsWith(d3str)) {
+						System.out.println("exclude dir " + d2 + " due to below recursive dir " + d3);
 						add = false;
 						break;
 					}
 				}
-				if (add && dir.isDirectory()) {
-					searchDirs.add(dir);
+				if (add) {
+					dirs3.add(d2);
 				}
 			}
 			
-			System.out.println("dirs to search: " + searchDirs);
+			System.out.println("dirs to search: " + dirs3);
 			
 			if (dirs.size() == 0) {
 				throw new Exception("No directories exist");
@@ -392,7 +390,7 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 			
 			thread = new SearchThread();
 			thread.listener = this;
-			thread.dirs = searchDirs;
+			thread.dirs = dirs3;
 			thread.startDate = startDate;
 			thread.endDate = endDate;
 			thread.maxFiles = maxFiles;
@@ -538,7 +536,8 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	}
 	
 	private void updateDirsLabel () {
-		dirLabel.setText(dirs.size() + "/" + (dirs.size() + disabledDirs.size()));
+		long c = dirs.stream().filter(d -> d.enabled).count();
+		dirLabel.setText(c + "/" + dirs.size());
 	}
 	
 	@Override
@@ -623,14 +622,11 @@ public class LogSearchJFrame extends JFrame implements SearchListener {
 	
 	private void chooseDirs () {
 		DirectoryJDialog d = new DirectoryJDialog(this, "Log Directories");
-		d.addDirs(dirs, true);
-		d.addDirs(disabledDirs, false);
+		d.addDirs(dirs);
 		d.setVisible(true);
 		if (d.isOk()) {
 			dirs.clear();
-			dirs.addAll(d.getDirs(true));
-			disabledDirs.clear();
-			disabledDirs.addAll(d.getDirs(false));
+			dirs.addAll(d.getDirs());
 			updateDirsLabel();
 		}
 	}

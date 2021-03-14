@@ -14,7 +14,7 @@ public class SearchThread extends Thread {
 	public volatile boolean running = true;
 	
 	public SearchListener listener;
-	public Set<File> dirs;
+	public List<DirOpt> dirs;
 	public Date startDate;
 	public Date endDate;
 	public int contextLinesBefore;
@@ -116,9 +116,9 @@ public class SearchThread extends Thread {
 	
 	private void find () {
 		listener.searchUpdate("finding");
-		for (File dir : dirs) {
+		for (DirOpt dir : dirs) {
 			checkRunning();
-			findDir(dir);
+			findDir(dir.dir, dir.recursive);
 		}
 		Collections.sort(results);
 		if (maxFiles > 0) {
@@ -136,25 +136,30 @@ public class SearchThread extends Thread {
 		return date != null && (startDate == null || date.compareTo(startDate) >= 0) && (endDate == null || date.compareTo(endDate) < 0);
 	}
 	
-	private void findDir (File dir) {
-		for (File file : dir.listFiles()) {
-			checkRunning();
-			try {
+	private void findDir (File dir, boolean recursive) {
+		File[] files = dir.listFiles();
+		if (files != null) {
+			for (File file : files) {
+				checkRunning();
+				
 				if (file.isFile()) {
 					if (file.getName().toLowerCase().endsWith(".zip")) {
-						findZip(file);
+						try {
+							findZip(file);
+						} catch (IOException e) {
+							System.out.println("could not open " + file + ": " + e);
+						}
 						
 					} else {
 						findFile(file);
 					}
 					
-				} else if (file.isDirectory()) {
-					findDir(file);
+				} else if (file.isDirectory() && recursive) {
+					findDir(file, true);
 				}
-				
-			} catch (Exception e) {
-				e.printStackTrace();
 			}
+		} else {
+			System.out.println("could not list files in " + dir);
 		}
 	}
 	
@@ -168,7 +173,7 @@ public class SearchThread extends Thread {
 		}
 	}
 	
-	private void findZip (final File file) throws Exception {
+	private void findZip (final File file) throws IOException {
 		System.out.println("find zip " + file);
 		
 		// don't close until scan finished
