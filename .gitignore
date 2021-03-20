@@ -9,3 +9,4 @@ logs
 server.log*
 dependency-reduced-pom.xml
 .idea
+/logsearch.iml
