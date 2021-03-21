@@ -14,6 +14,7 @@ public class FileCache {
 	private static long cacheMax;
 	
 	public static void init() {
+		System.out.println("init file cache");
 		LogSearchUtil.EX.scheduleAtFixedRate(() -> check(), 1, 1, TimeUnit.MINUTES);
 		long propMax = Long.parseLong(System.getProperty("ls.maxcache", "0"));
 		if (propMax > 0) {
@@ -32,7 +33,7 @@ public class FileCache {
 	/**
 	 * get sum of cached data arrays
 	 */
-	private static long sum() {
+	public static long sum() {
 		synchronized (FILES) {
 			long v = 0;
 			for (CachedFile f : FILES.values()) {
@@ -62,6 +63,7 @@ public class FileCache {
 	}
 	
 	public static CachedFile put (File f, CachedFile cf) {
+		System.out.println("put in file cache " + f + ", " + cf.len);
 		synchronized (FILES) {
 			cf.accessedNs = System.nanoTime();
 			FILES.put(f, cf);
@@ -91,6 +93,13 @@ public class FileCache {
 			}
 		}
 		System.gc();
+	}
+	
+	public static void clear() {
+		System.out.println("clear file cache");
+		synchronized (FILES) {
+			FILES.clear();
+		}
 	}
 
 	private FileCache() {

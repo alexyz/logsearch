@@ -114,16 +114,14 @@ public class SearchJPanel extends JPanel implements SearchListener {
         table.getColumnModel().getColumn(3).setPreferredWidth(200);
         JScrollPane tableScroller = new JScrollPane(table);
     
-        JPanel southPanel = new JPanel(new GridLayout(2, 1));
-        southPanel.add(flowPanel(showUnmatchedCheckBox, previewButton, previewAllButton));
-        southPanel.add(flowPanel(openInternalButton, saveButton, openButton));
+        JPanel southPanel = flowPanel(showUnmatchedCheckBox, previewButton, previewAllButton, openInternalButton, saveButton, openButton);
     
         add(northPanel, BorderLayout.NORTH);
         add(tableScroller, BorderLayout.CENTER);
         add(southPanel, BorderLayout.SOUTH);
     
         updateRangePanels();
-        updateStartStop(true);
+        updateStartStopButtons(true);
     
     }
 
@@ -173,7 +171,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
     }
 
     /** update start/stop buttons */
-    private void updateStartStop (boolean startEnabled) {
+    private void updateStartStopButtons (boolean startEnabled) {
         startButton.setEnabled(startEnabled);
         stopButton.setEnabled(!startEnabled);
         repaint();
@@ -227,7 +225,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
                         sb.append("Line ").append(line).append(": ").append(e.getValue()).append("\n");
                         prevLine = line;
                     }
-                    TextJDialog d = new TextJDialog(getLsFrame(), "Preview " + result.name);
+                    TextJFrame d = new TextJFrame(getLsFrame(), "Preview " + result.name);
                     d.setTextFont(new Font("monospaced", 0, 12));
                     d.setText(sb.toString());
                     d.setHighlight(pattern(), Color.orange);
@@ -263,7 +261,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
                     }
                 }
             }
-            TextJDialog d = new TextJDialog(getLsFrame(), "Preview All");
+            TextJFrame d = new TextJFrame(getLsFrame(), "Preview All");
             d.setTextFont(new Font("monospaced", 0, 12));
             d.setText(sb.toString());
             d.setHighlight(pattern(), Color.orange);
@@ -394,7 +392,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
             thread.cacheUncompressed = f.getCache();
             thread.start();
 
-            updateStartStop(false);
+            updateStartStopButtons(false);
 
         } catch (Exception e) {
             e.printStackTrace(System.out);
@@ -457,7 +455,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
             System.out.println("search complete " + e);
             thread = null;
             getLsFrame().updateTitle(SearchJPanel.this,null);
-            updateStartStop(true);
+            updateStartStopButtons(true);
             String durStr = e.time > 0 ? formatTime((int) e.time) : null;
             String sizeStr = e.size > 0 ? formatSize(e.size) : null;
             String sizePerSecStr = e.size > 0 ? formatSize((long) (e.size / e.time)) + "/s" : null;
@@ -472,7 +470,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
         SwingUtilities.invokeLater(() -> {
             System.out.println("search error " + msg);
             thread = null;
-            updateStartStop(true);
+            updateStartStopButtons(true);
             getLsFrame().updateTitle(SearchJPanel.this,null);
             JOptionPane.showMessageDialog(this, msg, "Search Error", JOptionPane.INFORMATION_MESSAGE);
         });
@@ -480,7 +478,7 @@ public class SearchJPanel extends JPanel implements SearchListener {
 
     private void stop () {
         if (thread != null) {
-            updateStartStop(true);
+            updateStartStopButtons(true);
             thread.running = false;
         }
     }
@@ -496,6 +494,10 @@ public class SearchJPanel extends JPanel implements SearchListener {
         if (r2 >= 0) {
             table.getSelectionModel().setSelectionInterval(r2, r2);
         }
+    }
+    
+    public boolean isRunning() {
+        return thread != null;
     }
 
 }

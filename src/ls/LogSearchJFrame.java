@@ -24,7 +24,7 @@ public class LogSearchJFrame extends JFrame {
 			instance.setVisible(true);
 		} catch (Exception e) {
 			e.printStackTrace(System.out);
-			JOptionPane.showMessageDialog(null,e.toString(),"Could not open",JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(null, e.toString(), "Could not open", JOptionPane.ERROR_MESSAGE);
 			// exit the awt thread
 			System.exit(1);
 		}
@@ -37,6 +37,8 @@ public class LogSearchJFrame extends JFrame {
 	private final JMenuItem viewItem = new JMenuItem("Open Large File...");
 	private final JMenuItem addTabItem = new JMenuItem("Add Tab");
 	private final JMenuItem removeTabItem = new JMenuItem("Remove Tab");
+	private final JMenuItem testDataItem = new JMenuItem("Create Test Data...");
+	private final JMenuItem clearCacheItem = new JMenuItem("Clear Cache");
 	private final JMenu optionsMenu = new JMenu("Options");
 	private final JTextField filenameContainsTextField = new JTextField(10);
 	private final JCheckBox cacheCheckBox = new JCheckBox("Cache");
@@ -82,11 +84,11 @@ public class LogSearchJFrame extends JFrame {
 		
 		cacheCheckBox.setSelected(prefs.getBoolean(Prefs.CACHE, false));
 		
-		int tabcount = prefs.getInt(Prefs.TABS, 1);
+		int tabcount = Math.max(1, prefs.getInt(Prefs.TABS, 1));
 		for (int t = 0; t < tabcount; t++) {
 			SearchJPanel p = new SearchJPanel();
 			p.loadPrefs(prefs, t);
-			tabs.addTab("Search" + (t + 1), p);
+			tabs.addTab("Search " + (t + 1), p);
 		}
 	}
 	
@@ -123,14 +125,18 @@ public class LogSearchJFrame extends JFrame {
 		charsetComboBox.setToolTipText("Character set to intepret files as");
 		
 		dirButton.addActionListener(e -> chooseDirs());
-		editorButton.addActionListener(e -> chooseEditor());
-		addTabItem.addActionListener(e -> addTab());
-		removeTabItem.addActionListener(e -> removeTab());
-		viewItem.addActionListener(e -> chooseAndView());
+		editorButton.addActionListener(e -> chooseEditor("Select Editor"));
+		addTabItem.addActionListener(e -> addTab("Add Tab"));
+		removeTabItem.addActionListener(e -> removeTab("Remove Tab"));
+		viewItem.addActionListener(e -> openLargeFile("Open Large File"));
+		testDataItem.addActionListener(e -> createTestData("Create Test Data"));
+		clearCacheItem.addActionListener(e -> clearCache("Clear Cache"));
 		
 		optionsMenu.add(addTabItem);
 		optionsMenu.add(removeTabItem);
 		optionsMenu.add(viewItem);
+		optionsMenu.add(testDataItem);
+		optionsMenu.add(clearCacheItem);
 		
 		menuBar.add(optionsMenu);
 		setJMenuBar(menuBar);
@@ -150,7 +156,38 @@ public class LogSearchJFrame extends JFrame {
 		p2.add(p, BorderLayout.NORTH);
 		p2.add(tabs, BorderLayout.CENTER);
 		setContentPane(p2);
-		
+	}
+	
+	private void clearCache (String title) {
+		try {
+			long sum = FileCache.sum();
+			if (JOptionPane.showConfirmDialog(this, "Clear file cache " + sum + " bytes?", title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+				FileCache.clear();
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
+	}
+	
+	private void createTestData (String title) {
+		try {
+			JFileChooser f = new JFileChooser();
+			f.setDialogTitle(title);
+			f.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			if (currentDir.isDirectory()) {
+				f.setCurrentDirectory(currentDir);
+			}
+			if (f.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+				File dir = f.getSelectedFile().getParentFile();
+				currentDir = dir;
+				TestData.create(currentDir);
+				JOptionPane.showMessageDialog(this, "Created test data " + dir, title, JOptionPane.INFORMATION_MESSAGE);
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
 	}
 	
 	public File getEditorFile () {
@@ -165,28 +202,44 @@ public class LogSearchJFrame extends JFrame {
 		return cacheCheckBox.isSelected();
 	}
 	
-	public String getFilenameContains() {
+	public String getFilenameContains () {
 		return filenameContainsTextField.getText();
 	}
 	
-	private void removeTab () {
-		int i = tabs.getSelectedIndex();
-		tabs.remove(i);
+	private void removeTab (String title) {
+		try {
+			int i = tabs.getSelectedIndex();
+			SearchJPanel p = (SearchJPanel) tabs.getComponentAt(i);
+			if (p.isRunning()) {
+				throw new Exception("search running");
+			} else {
+				tabs.remove(i);
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
 	}
 	
-	private void addTab () {
-		int c = tabs.getTabCount();
-		tabs.addTab("Search" + (c + 1), new SearchJPanel());
-		tabs.setSelectedIndex(c);
+	private void addTab (String title) {
+		try {
+			int c = tabs.getTabCount();
+			tabs.addTab("Search " + (c + 1), new SearchJPanel());
+			tabs.setSelectedIndex(c);
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
 	}
 	
 	public Charset getCharset () {
 		return (Charset) ((ComboItem) charsetComboBox.getSelectedItem()).object;
 	}
 	
-	protected void chooseAndView () {
+	protected void openLargeFile (String title) {
 		try {
 			JFileChooser f = new JFileChooser();
+			f.setDialogTitle(title);
 			if (currentDir.isDirectory()) {
 				f.setCurrentDirectory(currentDir);
 			}
@@ -195,9 +248,9 @@ public class LogSearchJFrame extends JFrame {
 				ViewJFrame fr = new ViewJFrame(this, f.getSelectedFile(), getCharset(), "", false, false);
 				fr.setVisible(true);
 			}
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			e.printStackTrace(System.out);
-			JOptionPane.showMessageDialog(this, e.toString(), "View", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
 		}
 	}
 	
@@ -217,7 +270,7 @@ public class LogSearchJFrame extends JFrame {
 		}
 		String t = "LogSearch";
 		if (msg != null && msg.length() > 0) {
-			t += " [" + titles + "]";
+			t += " " + titles;
 		}
 		setTitle(t);
 	}
@@ -233,27 +286,33 @@ public class LogSearchJFrame extends JFrame {
 		}
 	}
 	
-	private void chooseEditor () {
-		JFileChooser fc = new JFileChooser();
-		if (editorFile != null) {
-			fc.setSelectedFile(editorFile);
-		}
-		fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-		fc.setFileFilter(new FileFilter() {
-			@Override
-			public String getDescription () {
-				return "Executables";
+	private void chooseEditor (String title) {
+		try {
+			JFileChooser fc = new JFileChooser();
+			fc.setDialogTitle(title);
+			if (editorFile != null) {
+				fc.setSelectedFile(editorFile);
 			}
-			
-			@Override
-			public boolean accept (final File f) {
-				return f.isDirectory() || f.getName().toLowerCase().endsWith(".exe");
+			fc.setFileSelectionMode(JFileChooser.FILES_ONLY);
+			fc.setFileFilter(new FileFilter() {
+				@Override
+				public String getDescription () {
+					return "Executables";
+				}
+				
+				@Override
+				public boolean accept (final File f) {
+					return f.isDirectory() || f.getName().toLowerCase().endsWith(".exe");
+				}
+			});
+			int o = fc.showOpenDialog(LogSearchJFrame.this);
+			if (o == JFileChooser.APPROVE_OPTION) {
+				editorFile = fc.getSelectedFile();
+				editorLabel.setText(editorFile.getName());
 			}
-		});
-		int o = fc.showOpenDialog(LogSearchJFrame.this);
-		if (o == JFileChooser.APPROVE_OPTION) {
-			editorFile = fc.getSelectedFile();
-			editorLabel.setText(editorFile.getName());
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
 		}
 	}
 	

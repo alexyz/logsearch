@@ -60,7 +60,7 @@ public class SearchThread extends Thread {
 	@Override
 	public void run () {
 		try {
-			System.out.println("run");
+			System.out.println("run cache=" + cacheUncompressed);
 			long startNs = System.nanoTime();
 			init();
 			find();
@@ -69,7 +69,7 @@ public class SearchThread extends Thread {
 			double timeS = ((double)endNs) / LogSearchUtil.NS_IN_S;
 			listener.searchComplete(new SearchCompleteEvent(totalFilesFound, results.size(), timeS, totalSize, totalMatches));
 			
-		} catch (Exception e) {
+		} catch (Throwable e) {
 			e.printStackTrace(System.out);
 			listener.searchError(e.toString());
 			
@@ -282,6 +282,9 @@ public class SearchThread extends Thread {
 				cf = FileCache.put(file, new CachedFile());
 			}
 			System.out.println("added to cache: " + cf);
+			
+		} else {
+			System.out.println("not caching " + file);
 		}
 		
 		if (cf != null && cf.data != null) {
