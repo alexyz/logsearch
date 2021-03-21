@@ -32,21 +32,21 @@ public class LogSearchJFrame extends JFrame {
 	
 	private final JLabel dirLabel = new JLabel();
 	private final JButton dirButton = new JButton("Directories...");
+	private final JTextField filenameContainsTextField = new JTextField(10);
 	private final JButton editorButton = new JButton("Editor...");
 	private final JLabel editorLabel = new JLabel();
+	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
+	private final List<DirOpt> dirs = new ArrayList<>();
+	private final JCheckBox cacheCheckBox = new JCheckBox("Cache");
+	private final JTabbedPane tabs = new JTabbedPane();
+	private final JMenuBar menuBar = new JMenuBar();
+	private final JMenu optionsMenu = new JMenu("Options");
 	private final JMenuItem viewItem = new JMenuItem("Open Large File...");
 	private final JMenuItem addTabItem = new JMenuItem("Add Tab");
 	private final JMenuItem removeTabItem = new JMenuItem("Remove Tab");
 	private final JMenuItem testDataItem = new JMenuItem("Create Test Data...");
 	private final JMenuItem clearCacheItem = new JMenuItem("Clear Cache");
-	private final JMenu optionsMenu = new JMenu("Options");
-	private final JTextField filenameContainsTextField = new JTextField(10);
-	private final JCheckBox cacheCheckBox = new JCheckBox("Cache");
 	private final JComboBox<ComboItem> charsetComboBox = new JComboBox<>();
-	private final Preferences prefs = Preferences.userNodeForPackage(getClass());
-	private final List<DirOpt> dirs = new ArrayList<>();
-	private final JMenuBar menuBar = new JMenuBar();
-	private final JTabbedPane tabs = new JTabbedPane();
 	private final SortedMap<Integer, String> titles = new TreeMap<>();
 	
 	private File currentDir;
@@ -141,95 +141,22 @@ public class LogSearchJFrame extends JFrame {
 		menuBar.add(optionsMenu);
 		setJMenuBar(menuBar);
 		
-		JPanel p = new JPanel();
-		p.add(dirLabel);
-		p.add(dirButton);
-		p.add(new JLabel("Filename"));
-		p.add(filenameContainsTextField);
-		p.add(new JLabel("Charset"));
-		p.add(charsetComboBox);
-		p.add(editorLabel);
-		p.add(editorButton);
-		p.add(cacheCheckBox);
+		JPanel northPanel = new JPanel();
+		northPanel.add(dirLabel);
+		northPanel.add(dirButton);
+		northPanel.add(new JLabel("Filename"));
+		northPanel.add(filenameContainsTextField);
+		northPanel.add(new JLabel("Charset"));
+		northPanel.add(charsetComboBox);
+		northPanel.add(editorLabel);
+		northPanel.add(editorButton);
+		northPanel.add(cacheCheckBox);
 		
-		JPanel p2 = new JPanel(new BorderLayout());
-		p2.add(p, BorderLayout.NORTH);
-		p2.add(tabs, BorderLayout.CENTER);
-		setContentPane(p2);
-	}
-	
-	private void clearCache (String title) {
-		try {
-			long sum = FileCache.sum();
-			if (JOptionPane.showConfirmDialog(this, "Clear file cache " + sum + " bytes?", title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
-				FileCache.clear();
-			}
-		} catch (Throwable e) {
-			e.printStackTrace(System.out);
-			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
-		}
-	}
-	
-	private void createTestData (String title) {
-		try {
-			JFileChooser f = new JFileChooser();
-			f.setDialogTitle(title);
-			f.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-			if (currentDir.isDirectory()) {
-				f.setCurrentDirectory(currentDir);
-			}
-			if (f.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-				File dir = f.getSelectedFile().getParentFile();
-				currentDir = dir;
-				TestData.create(currentDir);
-				JOptionPane.showMessageDialog(this, "Created test data " + dir, title, JOptionPane.INFORMATION_MESSAGE);
-			}
-		} catch (Throwable e) {
-			e.printStackTrace(System.out);
-			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
-		}
-	}
-	
-	public File getEditorFile () {
-		return editorFile;
-	}
-	
-	public List<DirOpt> getDirs () {
-		return dirs;
-	}
-	
-	public boolean getCache () {
-		return cacheCheckBox.isSelected();
-	}
-	
-	public String getFilenameContains () {
-		return filenameContainsTextField.getText();
-	}
-	
-	private void removeTab (String title) {
-		try {
-			int i = tabs.getSelectedIndex();
-			SearchJPanel p = (SearchJPanel) tabs.getComponentAt(i);
-			if (p.isRunning()) {
-				throw new Exception("search running");
-			} else {
-				tabs.remove(i);
-			}
-		} catch (Throwable e) {
-			e.printStackTrace(System.out);
-			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
-		}
-	}
-	
-	private void addTab (String title) {
-		try {
-			int c = tabs.getTabCount();
-			tabs.addTab("Search " + (c + 1), new SearchJPanel());
-			tabs.setSelectedIndex(c);
-		} catch (Throwable e) {
-			e.printStackTrace(System.out);
-			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
-		}
+		JPanel topPanel = new JPanel(new BorderLayout());
+		topPanel.add(northPanel, BorderLayout.NORTH);
+		topPanel.add(tabs, BorderLayout.CENTER);
+		
+		setContentPane(topPanel);
 	}
 	
 	public Charset getCharset () {
@@ -310,6 +237,80 @@ public class LogSearchJFrame extends JFrame {
 				editorFile = fc.getSelectedFile();
 				editorLabel.setText(editorFile.getName());
 			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
+	}
+	
+	private void clearCache (String title) {
+		try {
+			long sum = FileCache.sum();
+			if (JOptionPane.showConfirmDialog(this, "Clear file cache " + sum + " bytes?", title, JOptionPane.OK_CANCEL_OPTION) == JOptionPane.OK_OPTION) {
+				FileCache.clear();
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
+	}
+	
+	private void createTestData (String title) {
+		try {
+			JFileChooser f = new JFileChooser();
+			f.setDialogTitle(title);
+			f.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			if (currentDir.isDirectory()) {
+				f.setCurrentDirectory(currentDir);
+			}
+			if (f.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+				File dir = f.getSelectedFile().getParentFile();
+				currentDir = dir;
+				TestData.create(currentDir);
+				JOptionPane.showMessageDialog(this, "Created test data " + dir, title, JOptionPane.INFORMATION_MESSAGE);
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
+	}
+	
+	public File getEditorFile () {
+		return editorFile;
+	}
+	
+	public List<DirOpt> getDirs () {
+		return dirs;
+	}
+	
+	public boolean getCache () {
+		return cacheCheckBox.isSelected();
+	}
+	
+	public String getFilenameContains () {
+		return filenameContainsTextField.getText();
+	}
+	
+	private void removeTab (String title) {
+		try {
+			int i = tabs.getSelectedIndex();
+			SearchJPanel p = (SearchJPanel) tabs.getComponentAt(i);
+			if (p.isRunning()) {
+				throw new Exception("search running");
+			} else {
+				tabs.remove(i);
+			}
+		} catch (Throwable e) {
+			e.printStackTrace(System.out);
+			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
+		}
+	}
+	
+	private void addTab (String title) {
+		try {
+			int c = tabs.getTabCount();
+			tabs.addTab("Search " + (c + 1), new SearchJPanel());
+			tabs.setSelectedIndex(c);
 		} catch (Throwable e) {
 			e.printStackTrace(System.out);
 			JOptionPane.showMessageDialog(this, e.toString(), title, JOptionPane.ERROR_MESSAGE);
