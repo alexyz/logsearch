@@ -15,7 +15,7 @@ public class DateSpinnerJPanel extends JPanel {
         f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         f.setContentPane(new DateSpinnerJPanel());
         f.pack();
-        f.show();
+        f.setVisible(true);
     }
 
     private final JCheckBox enableBox = new JCheckBox("Enable");

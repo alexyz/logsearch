@@ -33,29 +33,6 @@ public class LogSearchUtil {
 	public static final long NS_IN_S = 1_000_000_000L;
 	public static final long CONFIRM_SIZE = 50_000_000L;
 	
-	public static final String STARTDATE_PREF = "startdate";
-	public static final String ENDDATE_PREF = "enddate";
-	public static final String PARSEDATE_PREF = "parsedate";
-	public static final String CONTEXT_BEFORE_PREF = "contextbefore";
-	public static final String CONTEXT_AFTER_PREF = "contextafter";
-	public static final String CASE_PREF = "case";
-	public static final String EDITOR_PREF = "editor";
-	public static final String AGE_PREF = "age";
-	public static final String SEARCH_PREF = "search";
-	public static final String NAME_PREF = "name";
-	public static final String DIR_PREF = "dir";
-	public static final String DIS_DIR_PREF = "disdir";
-	public static final String NR_DIR_PREF = "nrdir";
-	public static final String NR_DIS_DIR_PREF = "nrdisdir";
-	public static final String REGEX_PREF = "regex";
-	public static final String EXCLUDE_PREF = "exclude";
-	public static final String CD_PREF = "cd";
-	public static final String RANGE_PREF = "range";
-	public static final String CACHE_PREF = "cache";
-	public static final String MATCHES_PREF = "matches";
-	public static final String COUNT_PREF = "count";
-	public static final String AGE_HOURS_PREF = "agehours";
-	
 	public static final String ALL_RANGE = "All Files";
 	public static final String DATE_RANGE = "Date Range";
 	public static final String AGE_RANGE = "Max Age";
@@ -184,6 +161,7 @@ public class LogSearchUtil {
 		return f != null && f.exists() ? f : null;
 	}
 
+	@Deprecated
 	public static JPanel inlineFlowPanel (Object... comps) {
 		FlowLayout fl = new FlowLayout();
 		fl.setVgap(0);
@@ -236,7 +214,7 @@ public class LogSearchUtil {
 			BigDecimal s = new BigDecimal(l).round(new MathContext(3)).scaleByPowerOfTen(-3*p);
 			return NumberFormat.getNumberInstance().format(s) + PREFIX[p];
 		} else {
-			return String.valueOf(l) + "B";
+			return l + "B";
 		}
 	}
 	

@@ -2,11 +2,11 @@ package ls;
 
 public interface SearchListener {
 	/** search result created (search continues) */
-	public void searchResult (Result fd);
+	void searchResult (Result fd);
 	/** search completed normally */
-	public void searchComplete (SearchCompleteEvent e);
+	void searchComplete (SearchCompleteEvent e);
 	/** search update (search continues) */
-	public void searchUpdate (String msg);
+	void searchUpdate (String msg);
 	/** search completed with error */
-	public void searchError (String msg);
+	void searchError (String msg);
 }

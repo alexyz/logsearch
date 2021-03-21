@@ -273,10 +273,10 @@ public class SearchThread extends Thread {
 			
 		} else if (cacheUncompressed && testCache(file, modMs)) {
 			// can cache
-			listener.searchUpdate(scanMsg + " (write to cache)");
+			listener.searchUpdate(scanMsg + " (cache)");
 			byte[] a = compress(file);
 			// require improvement
-			if (a.length <= (file.length() / 2)) {
+			if (a.length <= (file.length() / 4)) {
 				cf = FileCache.put(file, new CachedFile(a, file.length()));
 			} else {
 				cf = FileCache.put(file, new CachedFile());
@@ -285,7 +285,7 @@ public class SearchThread extends Thread {
 		}
 		
 		if (cf != null && cf.data != null) {
-			listener.searchUpdate(scanMsg + " (read from cache)");
+			listener.searchUpdate(scanMsg);
 			return new GzipCompressorInputStream(new ByteArrayInputStream(cf.data));
 			
 		} else {

@@ -4,10 +4,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.File;
-import java.nio.charset.Charset;
 import java.util.*;
 import java.util.List;
 import java.util.prefs.Preferences;
@@ -15,12 +12,10 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static ls.LogSearchUtil.*;
-import static ls.LogSearchUtil.COUNT_PREF;
 
-public class LogSearchJPanel extends JPanel implements SearchListener {
+public class SearchJPanel extends JPanel implements SearchListener {
 
-
-    private final JTextField nameTextField = new JTextField(10);
+    
     private final JTextField containsTextField = new JTextField(20);
     private final JTextField doesNotContainTextField = new JTextField(15);
     private final DateTextFieldJPanel startDatePanel = new DateTextFieldJPanel("Start Date");
@@ -43,8 +38,6 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
     private final JSpinner contextAfterSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
     private final JCheckBox regexCheckBox = new JCheckBox("Regex");
     private final JButton openInternalButton = new JButton("Open");
-    private final JComboBox<ComboItem> charsetComboBox = new JComboBox<>();
-    private final JCheckBox cacheCheckBox = new JCheckBox("Cache");
     private final JComboBox<String> rangeComboBox = new JComboBox<>();
     private final JSpinner countSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
     private final JSpinner matchesSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 1000, 1));
@@ -55,51 +48,10 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
     private final JLabel countLabel = new JLabel("Count");
 
     private volatile SearchThread thread;
-
-    public void savePrefs(Preferences prefs) {
-        prefs.put(NAME_PREF, nameTextField.getText());
-        prefs.put(SEARCH_PREF, containsTextField.getText());
-        prefs.put(EXCLUDE_PREF, doesNotContainTextField.getText());
-        prefs.putInt(AGE_PREF, ((Number) ageDaysSpinner.getValue()).intValue());
-        prefs.putInt(AGE_HOURS_PREF, ((Number) ageHoursSpinner.getValue()).intValue());
-        prefs.putBoolean(CASE_PREF, ignoreCaseCheckBox.isSelected());
-        prefs.putInt(CONTEXT_BEFORE_PREF, ((Number) contextBeforeSpinner.getValue()).intValue());
-        prefs.putInt(CONTEXT_AFTER_PREF, ((Number) contextAfterSpinner.getValue()).intValue());
-        prefs.putLong(STARTDATE_PREF, startDatePanel.getTime());
-        prefs.putLong(ENDDATE_PREF, endDatePanel.getTime());
-        prefs.putBoolean(REGEX_PREF, regexCheckBox.isSelected());
-
-        prefs.put(RANGE_PREF, String.valueOf(rangeComboBox.getSelectedItem()));
-        prefs.putBoolean(CACHE_PREF, cacheCheckBox.isSelected());
-        prefs.putInt(MATCHES_PREF, ((Number) matchesSpinner.getValue()).intValue());
-        prefs.putInt(COUNT_PREF, ((Number) countSpinner.getValue()).intValue());
-    }
-
-    public void loadPrefs(Preferences prefs) {
-        nameTextField.setText(prefs.get(NAME_PREF, "server.log"));
-        containsTextField.setText(prefs.get(SEARCH_PREF, ""));
-        doesNotContainTextField.setText(prefs.get(EXCLUDE_PREF, ""));
-        ageDaysSpinner.setValue(Integer.valueOf(prefs.getInt(AGE_PREF, 7)));
-        ageHoursSpinner.setValue(Integer.valueOf(prefs.getInt(AGE_HOURS_PREF, 0)));
-        ignoreCaseCheckBox.setSelected(prefs.getBoolean(CASE_PREF, false));
-        contextBeforeSpinner.setValue(Integer.valueOf(prefs.getInt(CONTEXT_BEFORE_PREF, 1)));
-        contextAfterSpinner.setValue(Integer.valueOf(prefs.getInt(CONTEXT_AFTER_PREF, 1)));
-        regexCheckBox.setSelected(prefs.getBoolean(REGEX_PREF, false));
-        Calendar cal = new GregorianCalendar();
-        GregorianCalendar midnightCal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
-        Date endDate = midnightCal.getTime();
-        midnightCal.add(Calendar.DATE, -7);
-        Date startDate = midnightCal.getTime();
-        startDatePanel.setDate(new Date(prefs.getLong(STARTDATE_PREF, startDate.getTime())));
-        endDatePanel.setDate(new Date(prefs.getLong(ENDDATE_PREF, endDate.getTime())));
-        rangeComboBox.setSelectedItem(prefs.get(RANGE_PREF, AGE_RANGE));
-        cacheCheckBox.setSelected(prefs.getBoolean(CACHE_PREF, false));
-        matchesSpinner.setValue(Integer.valueOf(prefs.getInt(MATCHES_PREF, 1000)));
-        countSpinner.setValue(Integer.valueOf(prefs.getInt(COUNT_PREF, 100)));
-    }
-
-    private void initListeners () {
-
+    
+    public SearchJPanel () {
+        super(new BorderLayout());
+        
         startButton.addActionListener(e -> search());
         stopButton.addActionListener(e -> stop());
         openButton.addActionListener(e -> openInEditor());
@@ -117,6 +69,107 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
         showUnmatchedCheckBox.addActionListener(e -> showUnmatched());
         rangeComboBox.addItemListener(e -> updateRangePanels());
         openInternalButton.addActionListener(e -> view());
+    
+        Vector<String> ranges = new Vector<>(Arrays.asList(ALL_RANGE, COUNT_RANGE, DATE_RANGE, AGE_RANGE));
+        Collections.sort(ranges);
+        rangeComboBox.setModel(new DefaultComboBoxModel<>(ranges));
+    
+        int width = 12, height = 20;
+    
+        startDatePanel.setToolTipText("Earliest file date and time (inclusive)");
+        endDatePanel.setToolTipText("Latest file date and time (exclusive)");
+        ageDaysSpinner.setPreferredSize(new Dimension(5 * width, height));
+        ageDaysSpinner.setToolTipText("Maximum file age (days component)");
+        ageHoursSpinner.setPreferredSize(new Dimension(4 * width, height));
+        ageHoursSpinner.setToolTipText("Maximum file age (hours component)");
+        countSpinner.setPreferredSize(new Dimension(5 * width, height));
+        countSpinner.setToolTipText("Maximum number of files to scan");
+    
+        //
+    
+        regexCheckBox.setToolTipText("Interpret Line Contains and Doesn't Contain as Java regular expression");
+    
+        //
+    
+        contextBeforeSpinner.setPreferredSize(new Dimension(4 * width, height));
+        contextBeforeSpinner.setToolTipText("Number of lines before match to include in preview");
+        contextAfterSpinner.setPreferredSize(new Dimension(4 * width, height));
+        contextAfterSpinner.setToolTipText("Number of lines after match to include in preview");
+        matchesSpinner.setPreferredSize(new Dimension(5 * width, height));
+        matchesSpinner.setToolTipText("Maximum number of matches per file (0 = unlimited)");
+    
+        //
+    
+        JPanel northPanel = boxPanel(
+                flowPanel(rangeComboBox,
+                        startDateLabel, startDatePanel, endDateLabel, endDatePanel,
+                        ageDaysLabel, ageDaysSpinner, ageHoursLabel, ageHoursSpinner,
+                        countLabel, countSpinner),
+                flowPanel("Line Contains", containsTextField, "Doesn't Contain", doesNotContainTextField, regexCheckBox, ignoreCaseCheckBox),
+                flowPanel("Context Before", contextBeforeSpinner, "After", contextAfterSpinner, "Max Matches", matchesSpinner, startButton, stopButton));
+    
+        table.getColumnModel().getColumn(0).setPreferredWidth(200);
+        table.getColumnModel().getColumn(1).setPreferredWidth(400);
+        table.getColumnModel().getColumn(2).setPreferredWidth(200);
+        table.getColumnModel().getColumn(3).setPreferredWidth(200);
+        JScrollPane tableScroller = new JScrollPane(table);
+    
+        JPanel southPanel = new JPanel(new GridLayout(2, 1));
+        southPanel.add(flowPanel(showUnmatchedCheckBox, previewButton, previewAllButton));
+        southPanel.add(flowPanel(openInternalButton, saveButton, openButton));
+    
+        add(northPanel, BorderLayout.NORTH);
+        add(tableScroller, BorderLayout.CENTER);
+        add(southPanel, BorderLayout.SOUTH);
+    
+        updateRangePanels();
+        updateStartStop(true);
+    
+    }
+
+    public void savePrefs(Preferences prefs,int i) {
+        String s = i > 0 ? "."+i :"";
+        
+        prefs.put(Prefs.SEARCH +s, containsTextField.getText());
+        prefs.put(Prefs.EXCLUDE +s, doesNotContainTextField.getText());
+        prefs.putInt(Prefs.AGE +s, ((Number) ageDaysSpinner.getValue()).intValue());
+        prefs.putInt(Prefs.AGE_HOURS +s, ((Number) ageHoursSpinner.getValue()).intValue());
+        prefs.putBoolean(Prefs.CASE +s, ignoreCaseCheckBox.isSelected());
+        prefs.putInt(Prefs.CONTEXT_BEFORE +s, ((Number) contextBeforeSpinner.getValue()).intValue());
+        prefs.putInt(Prefs.CONTEXT_AFTER +s, ((Number) contextAfterSpinner.getValue()).intValue());
+        prefs.putLong(Prefs.STARTDATE +s, startDatePanel.getTime());
+        prefs.putLong(Prefs.ENDDATE +s, endDatePanel.getTime());
+        prefs.putBoolean(Prefs.REGEX +s, regexCheckBox.isSelected());
+
+        prefs.put(Prefs.RANGE +s, String.valueOf(rangeComboBox.getSelectedItem()));
+        prefs.putInt(Prefs.MATCHES +s, ((Number) matchesSpinner.getValue()).intValue());
+        prefs.putInt(Prefs.COUNT +s, ((Number) countSpinner.getValue()).intValue());
+    }
+
+    public void loadPrefs(Preferences prefs,int i) {
+        String s = i > 0 ? "."+i :"";
+        containsTextField.setText(prefs.get(Prefs.SEARCH +s, ""));
+        doesNotContainTextField.setText(prefs.get(Prefs.EXCLUDE +s, ""));
+        ageDaysSpinner.setValue(Integer.valueOf(prefs.getInt(Prefs.AGE +s, 7)));
+        ageHoursSpinner.setValue(Integer.valueOf(prefs.getInt(Prefs.AGE_HOURS +s, 0)));
+        ignoreCaseCheckBox.setSelected(prefs.getBoolean(Prefs.CASE +s, false));
+        contextBeforeSpinner.setValue(Integer.valueOf(prefs.getInt(Prefs.CONTEXT_BEFORE +s, 1)));
+        contextAfterSpinner.setValue(Integer.valueOf(prefs.getInt(Prefs.CONTEXT_AFTER +s, 1)));
+        regexCheckBox.setSelected(prefs.getBoolean(Prefs.REGEX +s, false));
+        Calendar cal = new GregorianCalendar();
+        GregorianCalendar midnightCal = new GregorianCalendar(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DATE));
+        Date endDate = midnightCal.getTime();
+        midnightCal.add(Calendar.DATE, -7);
+        Date startDate = midnightCal.getTime();
+        startDatePanel.setDate(new Date(prefs.getLong(Prefs.STARTDATE +s, startDate.getTime())));
+        endDatePanel.setDate(new Date(prefs.getLong(Prefs.ENDDATE +s, endDate.getTime())));
+        rangeComboBox.setSelectedItem(prefs.get(Prefs.RANGE +s, AGE_RANGE));
+        matchesSpinner.setValue(Integer.valueOf(prefs.getInt(Prefs.MATCHES +s, 1000)));
+        countSpinner.setValue(Integer.valueOf(prefs.getInt(Prefs.COUNT +s, 100)));
+    }
+
+    private LogSearchJFrame getLsFrame() {
+        return (LogSearchJFrame) SwingUtilities.getAncestorOfClass(LogSearchJFrame.class,this);
     }
 
     /** update start/stop buttons */
@@ -134,7 +187,8 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
                 Result result = tableModel.getResult(r);
                 File file = getOrCreateFileConfirm(result, "View");
                 if (file != null) {
-                    ViewJFrame dialog = new ViewJFrame(this, file, charset(), containsTextField.getText(), ignoreCaseCheckBox.isSelected(), regexCheckBox.isSelected());
+                    LogSearchJFrame f = getLsFrame();
+                    ViewJFrame dialog = new ViewJFrame(f, file, f.getCharset(), containsTextField.getText(), ignoreCaseCheckBox.isSelected(), regexCheckBox.isSelected());
                     dialog.setVisible(true);
                 }
             }
@@ -156,10 +210,6 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
         return file;
     }
 
-    private Charset charset () {
-        return (Charset) ((ComboItem) charsetComboBox.getSelectedItem()).object;
-    }
-
     private void preview () {
         try {
             System.out.println("preview");
@@ -167,7 +217,7 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
             if (row >= 0) {
                 Result result = tableModel.getResult(row);
                 if (result.lines.size() > 0) {
-                    StringBuffer sb = new StringBuffer();
+                    StringBuilder sb = new StringBuilder();
                     int prevLine = 0;
                     for (Map.Entry<Integer, String> e : result.lines.entrySet()) {
                         int line = e.getKey().intValue();
@@ -177,7 +227,7 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
                         sb.append("Line ").append(line).append(": ").append(e.getValue()).append("\n");
                         prevLine = line;
                     }
-                    TextJDialog d = new TextJDialog(this, "Preview " + result.name);
+                    TextJDialog d = new TextJDialog(getLsFrame(), "Preview " + result.name);
                     d.setTextFont(new Font("monospaced", 0, 12));
                     d.setText(sb.toString());
                     d.setHighlight(pattern(), Color.orange);
@@ -202,18 +252,18 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
     private void previewAll () {
         try {
             System.out.println("preview all");
-            StringBuffer sb = new StringBuffer();
+            StringBuilder sb = new StringBuilder();
             for (Result result : tableModel.getResults()) {
                 if (result.lines.size() > 0) {
                     sb.append("\n");
-                    sb.append(result.name() + "\n");
+                    sb.append(result.name()).append("\n");
                     sb.append("\n");
                     for (Map.Entry<Integer, String> e : result.lines.entrySet()) {
                         sb.append("Line ").append(e.getKey()).append(": ").append(e.getValue()).append("\n");
                     }
                 }
             }
-            TextJDialog d = new TextJDialog(this, "Preview All");
+            TextJDialog d = new TextJDialog(getLsFrame(), "Preview All");
             d.setTextFont(new Font("monospaced", 0, 12));
             d.setText(sb.toString());
             d.setHighlight(pattern(), Color.orange);
@@ -238,13 +288,14 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
             }
         } catch (Exception e) {
             e.printStackTrace(System.out);
-            JOptionPane.showMessageDialog(LogSearchJFrame.this, e.toString(), "Save", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, e.toString(), "Save", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void openInEditor () {
         try {
             System.out.println("open");
+            File editorFile = getLsFrame().getEditorFile();
             if (editorFile == null) {
                 throw new Exception("no editor selected");
             }
@@ -269,7 +320,9 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
     private void search () {
         try {
             System.out.println("search");
-
+            LogSearchJFrame f = getLsFrame();
+            List<DirOpt> dirs = f.getDirs();
+    
             List<DirOpt> dirs2 = dirs.stream().filter(d -> d.dir.isDirectory() && d.enabled).collect(Collectors.toList());
 
             if (dirs2.size() == 0) {
@@ -302,7 +355,7 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
 
             System.out.println("dirs to search: " + dirs3);
 
-            if (dirs.size() == 0) {
+            if (dirs3.size() == 0) {
                 throw new Exception("No directories exist");
             }
 
@@ -328,7 +381,7 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
             thread.startDate = startDate;
             thread.endDate = endDate;
             thread.maxFiles = maxFiles;
-            thread.filenameLower = nameTextField.getText().toLowerCase();
+            thread.filenameLower = f.getFilenameContains().toLowerCase();
             thread.text = containsTextField.getText().trim();
             thread.exText = doesNotContainTextField.getText().trim();
             thread.regex = regexCheckBox.isSelected();
@@ -337,8 +390,8 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
             thread.contextLinesAfter = ((Number)contextAfterSpinner.getValue()).intValue();
             thread.maxMatches = ((Number)matchesSpinner.getValue()).intValue();
             thread.dateParser = new FileDater(true);
-            thread.charset = charset();
-            thread.cacheUncompressed = cacheCheckBox.isSelected();
+            thread.charset = f.getCharset();
+            thread.cacheUncompressed = f.getCache();
             thread.start();
 
             updateStartStop(false);
@@ -348,77 +401,6 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
             JOptionPane.showMessageDialog(this, e.toString(), "Search", JOptionPane.ERROR_MESSAGE);
         }
     }
-
-    private void initComponents() {
-
-        //
-
-        charsetComboBox.setModel(new DefaultComboBoxModel<>(LogSearchUtil.charsets()));
-        charsetComboBox.setToolTipText("Character set to intepret files as");
-
-        //
-
-        Vector<String> ranges = new Vector<>(Arrays.asList(ALL_RANGE, COUNT_RANGE, DATE_RANGE, AGE_RANGE));
-        Collections.sort(ranges);
-        rangeComboBox.setModel(new DefaultComboBoxModel<>(ranges));
-
-        int width = 12, height = 20;
-
-        startDatePanel.setToolTipText("Earliest file date and time (inclusive)");
-        endDatePanel.setToolTipText("Latest file date and time (exclusive)");
-        ageDaysSpinner.setPreferredSize(new Dimension(5 * width, height));
-        ageDaysSpinner.setToolTipText("Maximum file age (days component)");
-        ageHoursSpinner.setPreferredSize(new Dimension(4 * width, height));
-        ageHoursSpinner.setToolTipText("Maximum file age (hours component)");
-        countSpinner.setPreferredSize(new Dimension(5 * width, height));
-        countSpinner.setToolTipText("Maximum number of files to scan");
-
-        //
-
-        regexCheckBox.setToolTipText("Interpret Line Contains and Doesn't Contain as Java regular expression");
-
-        //
-
-        contextBeforeSpinner.setPreferredSize(new Dimension(4 * width, height));
-        contextBeforeSpinner.setToolTipText("Number of lines before match to include in preview");
-        contextAfterSpinner.setPreferredSize(new Dimension(4 * width, height));
-        contextAfterSpinner.setToolTipText("Number of lines after match to include in preview");
-        matchesSpinner.setPreferredSize(new Dimension(5 * width, height));
-        matchesSpinner.setToolTipText("Maximum number of matches per file (0 = unlimited)");
-        cacheCheckBox.setToolTipText("Cache uncompressed files in memory");
-
-        //
-
-        JPanel northPanel = boxPanel(
-                flowPanel( "Filename Contains", nameTextField, "Charset", charsetComboBox),
-                flowPanel(rangeComboBox,
-                        startDateLabel, startDatePanel, endDateLabel, endDatePanel,
-                        ageDaysLabel, ageDaysSpinner, ageHoursLabel, ageHoursSpinner,
-                        countLabel, countSpinner),
-                flowPanel("Line Contains", containsTextField, "Doesn't Contain", doesNotContainTextField, regexCheckBox, ignoreCaseCheckBox),
-                flowPanel("Context Before", contextBeforeSpinner, "After", contextAfterSpinner, "Max Matches", matchesSpinner, cacheCheckBox),
-                flowPanel(startButton, stopButton));
-
-        table.getColumnModel().getColumn(0).setPreferredWidth(200);
-        table.getColumnModel().getColumn(1).setPreferredWidth(400);
-        table.getColumnModel().getColumn(2).setPreferredWidth(200);
-        table.getColumnModel().getColumn(3).setPreferredWidth(200);
-        JScrollPane tableScroller = new JScrollPane(table);
-
-        JPanel southPanel = new JPanel(new GridLayout(2, 1));
-        southPanel.add(flowPanel(showUnmatchedCheckBox, previewButton, previewAllButton));
-        southPanel.add(flowPanel(openInternalButton, saveButton, openButton));
-
-        JPanel contentPanel = new JPanel(new BorderLayout());
-        contentPanel.add(northPanel, BorderLayout.NORTH);
-        contentPanel.add(tableScroller, BorderLayout.CENTER);
-        contentPanel.add(southPanel, BorderLayout.SOUTH);
-
-        updateRangePanels();
-        updateStartStop(true);
-
-    }
-
 
     /** change the enabled status of the range controls */
     private void updateRangePanels() {
@@ -465,7 +447,7 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
     public void searchUpdate (String msg) {
         SwingUtilities.invokeLater(() -> {
             System.out.println("search update " + msg);
-            updateTitle(msg);
+            getLsFrame().updateTitle(SearchJPanel.this,msg);
         });
     }
 
@@ -474,14 +456,14 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
         SwingUtilities.invokeLater(() -> {
             System.out.println("search complete " + e);
             thread = null;
-            updateTitle(null);
+            getLsFrame().updateTitle(SearchJPanel.this,null);
             updateStartStop(true);
             String durStr = e.time > 0 ? formatTime((int) e.time) : null;
             String sizeStr = e.size > 0 ? formatSize(e.size) : null;
             String sizePerSecStr = e.size > 0 ? formatSize((long) (e.size / e.time)) + "/s" : null;
             String msg = String.format("Search Complete: %d/%d files, %s, %s, %s, %d lines matched",
                     e.scanned, e.found, sizeStr, durStr, sizePerSecStr, e.matches);
-            JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, msg, "Search Completed", JOptionPane.INFORMATION_MESSAGE);
         });
     }
 
@@ -491,8 +473,8 @@ public class LogSearchJPanel extends JPanel implements SearchListener {
             System.out.println("search error " + msg);
             thread = null;
             updateStartStop(true);
-            updateTitle(null);
-            JOptionPane.showMessageDialog(LogSearchJFrame.this, msg, "Search Error", JOptionPane.INFORMATION_MESSAGE);
+            getLsFrame().updateTitle(SearchJPanel.this,null);
+            JOptionPane.showMessageDialog(this, msg, "Search Error", JOptionPane.INFORMATION_MESSAGE);
         });
     }
 

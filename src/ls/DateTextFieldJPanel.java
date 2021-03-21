@@ -13,7 +13,7 @@ public class DateTextFieldJPanel extends JPanel {
     private final DateFormat dateFormat = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT);
     private final JTextField dateField = new JTextField();
     private final JButton editButton = new JButton("...");
-    private String title;
+    private final String title;
 
     public DateTextFieldJPanel(String title) {
         this.title = title;
@@ -21,7 +21,7 @@ public class DateTextFieldJPanel extends JPanel {
         dateField.setColumns((int)f);
         editButton.addActionListener(e -> openDialog());
         editButton.setPreferredSize(new Dimension(16,16));
-        editButton.setFont(editButton.getFont().deriveFont(8));
+        //editButton.setFont(editButton.getFont().deriveFont(8f));
         add(dateField);
         add(editButton);
     }
